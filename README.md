@@ -16,6 +16,9 @@ AI辅助开发旨在快速响应需求，可能在部分细节上与纯人工开
 
 一个推特媒体（图片、视频）下载器。
 
+可以批量添加博主名，批量一键下载、去重、设定下载范围、记录下载时间。
+
+
 ## 下载
 
 [Releases](https://github.com/hureyqi/x-spider-mod-2026/releases/latest)
