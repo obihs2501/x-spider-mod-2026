@@ -39,4 +39,8 @@ AI辅助开发旨在快速响应需求，可能在部分细节上与纯人工开
 
 ![screenshot-downloading](./assets/screenshot-downloading.jpg)
 
+![screenshot-homepage](./assets/ScreenShot_2026-05-13_090430_134.png)
 
+![screenshot-homepage](./assets/ScreenShot_2026-05-13_090417_855.png)
+
+![screenshot-homepage](./assets/ScreenShot_2026-05-13_090355_451.png)
