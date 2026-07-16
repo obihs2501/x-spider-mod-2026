@@ -536,7 +536,6 @@ async function runCreationTask(task: CreationTask, abortSignal: AbortSignal) {
           media,
           post,
         });
-        pageHasNewFiles = true;
         consecutiveSkipCount = 0;
       }
     }
