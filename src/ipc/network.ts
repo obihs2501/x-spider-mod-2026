@@ -41,20 +41,28 @@ export async function request(options: RequestOptions) {
     } catch (err: any) {
       lastErr = err;
       const errText = String(err?.message || err || '');
+      // 429 速率限制可重试，其他 4xx/5xx 和 JSON 解析错误不可重试
+      const is429 = errText.includes('HTTP 429');
       const nonRetryable =
-        errText.includes('响应不是有效 JSON') ||
-        errText.includes('HTTP 4') ||
-        errText.includes('HTTP 5');
+        !is429 &&
+        (errText.includes('响应不是有效 JSON') ||
+          errText.includes('HTTP 4') ||
+          errText.includes('HTTP 5'));
+
+      // 429 使用更长的延迟
+      const effectiveDelay = is429 ? Math.max(retryDelay, 5000) : retryDelay;
+
       log.warn(
         nonRetryable
           ? 'Request failed with a non-retryable response'
-          : `Request failed, retry after ${retryDelay}ms, remaining retry count: ${remainingRetryCount}`,
+          : `Request failed, retry after ${effectiveDelay}ms, remaining retry count: ${remainingRetryCount}`,
         err,
       );
       // GraphQL queryId 失效、HTML 错误页、明确 HTTP 错误重试 16 次不会变好，
       // 直接上抛以避免批量任务每个博主卡数分钟。
       if (nonRetryable) throw err;
-      await delay(retryDelay);
+      await delay(effectiveDelay);
+      await delay(effectiveDelay);
       remainingRetryCount--;
       retryDelay *= 2;
       if (retryDelay > MAX_RETRY_DELAY) {
