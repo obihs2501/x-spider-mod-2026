@@ -78,12 +78,12 @@ export const BatchListManager: React.FC = () => {
       key: 'name',
       render: (name: string, record: BatchList) => (
         <Space direction="vertical" size={0}>
-          <Text strong style={{ color: isDark ? '#f5f5f7' : '#1d1d1f' }}>
+          <Text strong style={{ color: isDark ? '#EDECE4' : '#3D3929' }}>
             {name}
           </Text>
           {record.description && (
             <Text
-              style={{ fontSize: 12, color: isDark ? '#98989d' : '#86868b' }}
+              style={{ fontSize: 12, color: isDark ? '#A8A69E' : '#87867F' }}
             >
               {record.description}
             </Text>
@@ -98,10 +98,10 @@ export const BatchListManager: React.FC = () => {
       width: 120,
       render: (accounts: string[], record: BatchList) => (
         <Space>
-          <Tag color="blue">{accounts.length}</Tag>
+          <Tag color="volcano">{accounts.length}</Tag>
           {record.lastUsedAt && (
             <ClockCircleOutlined
-              style={{ color: isDark ? '#6e6e73' : '#999' }}
+              style={{ color: isDark ? '#87867F' : '#A09D92' }}
             />
           )}
         </Space>
@@ -137,7 +137,7 @@ export const BatchListManager: React.FC = () => {
       key: 'source',
       width: 100,
       render: (source: 'medias' | 'tweets') => (
-        <Tag color={source === 'medias' ? 'cyan' : 'geekblue'}>
+        <Tag color={source === 'medias' ? 'volcano' : 'orange'}>
           {source === 'medias' ? '媒体' : '帖子'}
         </Tag>
       ),
@@ -148,7 +148,7 @@ export const BatchListManager: React.FC = () => {
       key: 'createdAt',
       width: 150,
       render: (time: number) => (
-        <span style={{ color: isDark ? '#98989d' : '#86868b' }}>
+        <span style={{ color: isDark ? '#A8A69E' : '#87867F' }}>
           {dayjs(time).format('YYYY-MM-DD HH:mm')}
         </span>
       ),
@@ -193,14 +193,14 @@ export const BatchListManager: React.FC = () => {
   return (
     <div
       className="p-6"
-      style={{ backgroundColor: isDark ? '#0a0a0a' : 'transparent' }}
+      style={{ backgroundColor: isDark ? '#262624' : 'transparent' }}
     >
       <div className="mb-6">
         <div className="flex justify-between items-center mb-4">
           <Title
             level={4}
             className="!mb-0"
-            style={{ color: isDark ? '#f5f5f7' : '#1d1d1f' }}
+            style={{ color: isDark ? '#EDECE4' : '#3D3929' }}
           >
             批量列表管理
           </Title>
@@ -208,7 +208,7 @@ export const BatchListManager: React.FC = () => {
             创建新列表
           </Button>
         </div>
-        <Text style={{ color: isDark ? '#98989d' : '#86868b' }}>
+        <Text style={{ color: isDark ? '#A8A69E' : '#87867F' }}>
           管理您的批量下载列表，支持账户的增删改查，以及一键批量下载功能。
         </Text>
       </div>
@@ -216,8 +216,8 @@ export const BatchListManager: React.FC = () => {
       {batchLists.length === 0 ? (
         <Card
           style={{
-            backgroundColor: isDark ? '#1c1c1e' : '#ffffff',
-            borderColor: isDark ? 'rgba(255,255,255,0.08)' : '#e5e5e7',
+            backgroundColor: isDark ? '#30302E' : '#ffffff',
+            borderColor: isDark ? '#3F3E3A' : '#E8E6DC',
           }}
         >
           <Empty
@@ -238,8 +238,8 @@ export const BatchListManager: React.FC = () => {
           <Card
             className="mb-4"
             style={{
-              backgroundColor: isDark ? '#1c1c1e' : '#ffffff',
-              borderColor: isDark ? 'rgba(255,255,255,0.08)' : '#e5e5e7',
+              backgroundColor: isDark ? '#30302E' : '#ffffff',
+              borderColor: isDark ? '#3F3E3A' : '#E8E6DC',
             }}
           >
             <Table

@@ -99,7 +99,7 @@ export async function getUser(screenName: string): Promise<TwitterUser> {
   const resp = await request({
     method: 'GET',
     responseType: 'json',
-    url: `https://${HOST}/i/api/graphql/NimuplG1OB7Fd2btCLdBOw/UserByScreenName`,
+    url: `https://${HOST}/i/api/graphql/sLVLhk0bGj3MVFEKTdax1w/UserByScreenName`,
     query: {
       features: JSON.stringify({
         hidden_profile_likes_enabled: true,
@@ -124,6 +124,15 @@ export async function getUser(screenName: string): Promise<TwitterUser> {
     headers: await getAuthedHeaders(),
   });
   ensureResponse(resp);
+
+  const apiErrors = R.path<any[]>(['errors'])(resp.body);
+  if (apiErrors?.length) {
+    const msg = apiErrors
+      .map((e: any) => e?.message || e?.code)
+      .filter(Boolean)
+      .join('；');
+    throw new Error(`X API 返回错误：${msg || '未知错误'}`);
+  }
 
   const data = R.path(['data', 'user', 'result', 'legacy'])(resp.body) as any;
 
@@ -252,7 +261,7 @@ export async function getUserMedias(
 }> {
   const resp = await request({
     method: 'GET',
-    url: `https://${HOST}/i/api/graphql/cEjpJXA15Ok78yO4TUQPeQ/UserMedia`,
+    url: `https://${HOST}/i/api/graphql/YqiE3JL1KNgf9nSljYdxaA/UserMedia`,
     responseType: 'json',
     query: {
       features: JSON.stringify({
@@ -294,6 +303,15 @@ export async function getUserMedias(
     headers: await getAuthedHeaders(),
   });
   ensureResponse(resp);
+
+  const apiErrors = R.path<any[]>(['errors'])(resp.body);
+  if (apiErrors?.length) {
+    const msg = apiErrors
+      .map((e: any) => e?.message || e?.code)
+      .filter(Boolean)
+      .join('；');
+    throw new Error(`X API 返回错误：${msg || '未知错误'}`);
+  }
 
   const extractTwitterPosts = (
     pathToInstructions: (data: any) => any,
@@ -384,7 +402,7 @@ export async function getUserTweets(
 }> {
   const resp = await request({
     method: 'GET',
-    url: `https://${HOST}/i/api/graphql/9zyyd1hebl7oNWIPdA8HRw/UserTweets`,
+    url: `https://${HOST}/i/api/graphql/HuTx74BxAnezK1gWvYY7zg/UserTweets`,
     responseType: 'json',
     query: {
       features: JSON.stringify({
@@ -430,6 +448,15 @@ export async function getUserTweets(
     headers: await getAuthedHeaders(),
   });
   ensureResponse(resp);
+
+  const apiErrors = R.path<any[]>(['errors'])(resp.body);
+  if (apiErrors?.length) {
+    const msg = apiErrors
+      .map((e: any) => e?.message || e?.code)
+      .filter(Boolean)
+      .join('；');
+    throw new Error(`X API 返回错误：${msg || '未知错误'}`);
+  }
 
   const extractTwitterPosts = (
     pathToInstructions: (data: any) => any,
@@ -524,7 +551,7 @@ export async function getUserTweets(
 export async function getTweetDetail(tweetId: string): Promise<TwitterPost> {
   const resp = await request({
     method: 'GET',
-    url: `https://${HOST}/i/api/graphql/0hWvDhmW8YQ-S_ib3azIrw/TweetResultByRestId`,
+    url: `https://${HOST}/i/api/graphql/D_jNhjWZeRZT5NURzfJZSQ/TweetResultByRestId`,
     responseType: 'json',
     query: {
       variables: JSON.stringify({
@@ -571,6 +598,15 @@ export async function getTweetDetail(tweetId: string): Promise<TwitterPost> {
     headers: await getAuthedHeaders(),
   });
   ensureResponse(resp);
+
+  const apiErrors = R.path<any[]>(['errors'])(resp.body);
+  if (apiErrors?.length) {
+    const msg = apiErrors
+      .map((e: any) => e?.message || e?.code)
+      .filter(Boolean)
+      .join('；');
+    throw new Error(`X API 返回错误：${msg || '未知错误'}`);
+  }
 
   let result = R.path<any>(['data', 'tweetResult', 'result'])(resp.body);
   if (result?.__typename === 'TweetWithVisibilityResults') {

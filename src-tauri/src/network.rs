@@ -90,11 +90,31 @@ pub async fn network_fetch(
     h
   };
 
-  // Load response body
+  // Load response body. 先读取原始文本再解析 JSON：X 的 GraphQL queryId
+  // 失效/限流时可能返回 HTML 或空响应，直接 response.json() 只会产生难以定位的
+  // "expected value at line 1 column 1"。这里保留状态码与正文摘要。
   let body: Value = {
     match response_type.as_str() {
-      "json" => response.json().await.map_err(map_reqwest_err).map(|res| Value::Object(res)),
-      "text" => response.text().await.map_err(map_reqwest_err).map(|res| Value::String(res)),
+      "json" => {
+        let status = response.status().as_u16();
+        let content_type = response.headers()
+          .get(reqwest::header::CONTENT_TYPE)
+          .and_then(|v| v.to_str().ok())
+          .unwrap_or("")
+          .to_string();
+        let text = response.text().await.map_err(map_reqwest_err)?;
+        serde_json::from_str::<Value>(&text).map_err(|err| {
+          let preview: String = text.chars().take(300).collect();
+          format!(
+            "响应不是有效 JSON（HTTP {}，Content-Type={}）：{}；正文摘要：{}",
+            status,
+            content_type,
+            err,
+            if preview.is_empty() { "[空响应]" } else { preview.as_str() }
+          )
+        })
+      },
+      "text" => response.text().await.map_err(map_reqwest_err).map(Value::String),
       "binary" => {
         let bytes = response.bytes().await.map_err(map_reqwest_err)?;
         serde_json::to_value(bytes.to_vec()).map_err(|err| err.to_string())

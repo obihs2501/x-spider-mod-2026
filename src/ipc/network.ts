@@ -40,10 +40,20 @@ export async function request(options: RequestOptions) {
       );
     } catch (err: any) {
       lastErr = err;
+      const errText = String(err?.message || err || '');
+      const nonRetryable =
+        errText.includes('响应不是有效 JSON') ||
+        errText.includes('HTTP 4') ||
+        errText.includes('HTTP 5');
       log.warn(
-        `Request failed, retry after ${retryDelay}ms, remaining retry count: ${remainingRetryCount}`,
+        nonRetryable
+          ? 'Request failed with a non-retryable response'
+          : `Request failed, retry after ${retryDelay}ms, remaining retry count: ${remainingRetryCount}`,
         err,
       );
+      // GraphQL queryId 失效、HTML 错误页、明确 HTTP 错误重试 16 次不会变好，
+      // 直接上抛以避免批量任务每个博主卡数分钟。
+      if (nonRetryable) throw err;
       await delay(retryDelay);
       remainingRetryCount--;
       retryDelay *= 2;

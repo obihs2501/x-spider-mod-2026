@@ -306,11 +306,11 @@ export const BatchListProgress: React.FC<BatchListProgressProps> = ({
   return (
     <div
       style={{
-        background: '#0d1117',
+        background: 'var(--ant-color-bg-container)',
         borderRadius: 16,
         padding: 24,
-        border: '1px solid #2d333b',
-        boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+        border: '1px solid var(--ant-color-border-secondary)',
+        boxShadow: '0 8px 28px rgba(61,57,41,0.10)',
         position: 'relative',
         overflow: 'hidden',
       }}
@@ -322,8 +322,7 @@ export const BatchListProgress: React.FC<BatchListProgressProps> = ({
           right: -100,
           width: 300,
           height: 300,
-          background:
-            'radial-gradient(circle, rgba(99,102,241,0.15) 0%, transparent 70%)',
+          background: 'radial-gradient(circle, rgba(201,100,66,0.12) 0%, transparent 70%)',
           pointerEvents: 'none',
         }}
       />
@@ -334,8 +333,7 @@ export const BatchListProgress: React.FC<BatchListProgressProps> = ({
           left: -80,
           width: 200,
           height: 200,
-          background:
-            'radial-gradient(circle, rgba(16,185,129,0.1) 0%, transparent 70%)',
+          background: 'radial-gradient(circle, rgba(201,100,66,0.07) 0%, transparent 70%)',
           pointerEvents: 'none',
         }}
       />
@@ -355,7 +353,7 @@ export const BatchListProgress: React.FC<BatchListProgressProps> = ({
                 width: 40,
                 height: 40,
                 borderRadius: 10,
-                background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+                background: '#C96442',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -366,11 +364,11 @@ export const BatchListProgress: React.FC<BatchListProgressProps> = ({
             <div>
               <Title
                 level={5}
-                style={{ color: '#e6edf3', margin: 0, fontSize: 16 }}
+                style={{ color: 'var(--ant-color-text)', margin: 0, fontSize: 16 }}
               >
                 {list.name}
               </Title>
-              <Text style={{ color: '#8b949e', fontSize: 12 }}>
+              <Text style={{ color: 'var(--ant-color-text-secondary)', fontSize: 12 }}>
                 共 {list.accounts.length} 个账户
               </Text>
             </div>
@@ -447,7 +445,7 @@ export const BatchListProgress: React.FC<BatchListProgressProps> = ({
       <div style={{ position: 'relative', zIndex: 1, marginBottom: 16 }}>
         <Text
           style={{
-            color: '#8b949e',
+            color: 'var(--ant-color-text-secondary)',
             fontSize: 12,
             display: 'block',
             marginBottom: 6,
@@ -501,7 +499,7 @@ export const BatchListProgress: React.FC<BatchListProgressProps> = ({
         <Col span={6}>
           <div
             style={{
-              background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+              background: '#C96442',
               borderRadius: 12,
               padding: '16px 12px',
               textAlign: 'center',
@@ -511,7 +509,7 @@ export const BatchListProgress: React.FC<BatchListProgressProps> = ({
           >
             <div
               style={{
-                color: 'rgba(255,255,255,0.7)',
+                color: 'var(--ant-color-text-secondary)',
                 fontSize: 11,
                 marginBottom: 4,
               }}
@@ -535,7 +533,7 @@ export const BatchListProgress: React.FC<BatchListProgressProps> = ({
           >
             <div
               style={{
-                color: 'rgba(255,255,255,0.5)',
+                color: 'var(--ant-color-text-secondary)',
                 fontSize: 11,
                 marginBottom: 4,
               }}
@@ -560,7 +558,7 @@ export const BatchListProgress: React.FC<BatchListProgressProps> = ({
           >
             <div
               style={{
-                color: 'rgba(255,255,255,0.5)',
+                color: 'var(--ant-color-text-secondary)',
                 fontSize: 11,
                 marginBottom: 4,
               }}
@@ -585,7 +583,7 @@ export const BatchListProgress: React.FC<BatchListProgressProps> = ({
           >
             <div
               style={{
-                color: 'rgba(255,255,255,0.5)',
+                color: 'var(--ant-color-text-secondary)',
                 fontSize: 11,
                 marginBottom: 4,
               }}
@@ -604,11 +602,10 @@ export const BatchListProgress: React.FC<BatchListProgressProps> = ({
         <Progress
           percent={overallProgress}
           strokeColor={{
-            '0%': '#6366f1',
-            '50%': '#8b5cf6',
-            '100%': '#22d3ee',
+            '0%': '#C96442',
+            '100%': '#D97757',
           }}
-          trailColor="#1e293b"
+          trailColor="var(--ant-color-fill-secondary)"
           strokeWidth={8}
           showInfo={false}
           style={{ marginBottom: 8 }}
@@ -620,14 +617,14 @@ export const BatchListProgress: React.FC<BatchListProgressProps> = ({
             alignItems: 'center',
           }}
         >
-          <Text style={{ color: '#8b949e', fontSize: 12 }}>
+          <Text style={{ color: 'var(--ant-color-text-secondary)', fontSize: 12 }}>
             {isRunning && currentIndex < list.accounts.length
               ? `正在下载: @${list.accounts[currentIndex]}`
               : completedAccounts.length > 0
                 ? `已完成 ${completedAccounts.length} 个账户`
                 : '准备开始'}
           </Text>
-          <Text style={{ color: '#8b949e', fontSize: 12 }}>
+          <Text style={{ color: 'var(--ant-color-text-secondary)', fontSize: 12 }}>
             {currentIndex + 1} / {list.accounts.length}
           </Text>
         </div>
@@ -649,7 +646,7 @@ export const BatchListProgress: React.FC<BatchListProgressProps> = ({
             onClick={handleStartDownload}
             disabled={currentIndex >= list.accounts.length}
             style={{
-              background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
+              background: '#C96442',
               border: 'none',
               borderRadius: 8,
               padding: '6px 20px',
@@ -665,7 +662,7 @@ export const BatchListProgress: React.FC<BatchListProgressProps> = ({
             icon={<PlayCircleOutlined />}
             onClick={handleResume}
             style={{
-              background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
+              background: '#C96442',
               border: 'none',
               borderRadius: 8,
               padding: '6px 20px',
@@ -712,9 +709,9 @@ export const BatchListProgress: React.FC<BatchListProgressProps> = ({
           icon={<DownloadOutlined />}
           onClick={handleReset}
           style={{
-            background: 'rgba(255,255,255,0.05)',
-            borderColor: 'rgba(255,255,255,0.1)',
-            color: '#8b949e',
+            background: 'var(--ant-color-fill-tertiary)',
+            borderColor: 'var(--ant-color-border)',
+            color: 'var(--ant-color-text-secondary)',
             borderRadius: 8,
             padding: '6px 20px',
             height: 36,
@@ -842,7 +839,7 @@ export const BatchListProgress: React.FC<BatchListProgressProps> = ({
 
       <div
         style={{
-          background: '#0a0f1a',
+          background: 'var(--ant-color-bg-layout)',
           border: '1px solid #1e293b',
           borderRadius: 10,
           overflow: 'hidden',
@@ -868,7 +865,7 @@ export const BatchListProgress: React.FC<BatchListProgressProps> = ({
                 background: '#22c55e',
               }}
             />
-            <Text style={{ color: '#e6edf3', fontSize: 12, fontWeight: 600 }}>
+            <Text style={{ color: 'var(--ant-color-text)', fontSize: 12, fontWeight: 600 }}>
               下载日志
             </Text>
           </div>
