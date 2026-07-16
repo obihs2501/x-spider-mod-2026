@@ -115,11 +115,11 @@ export const REPLACER_MAP: Record<
     replacer: R.path(['media', 'height']),
   },
   MEDIA_INDEX: {
-    desc: '资源索引',
+    desc: '资源索引（从 0 开始）',
     replacer: (data) =>
-      (
-        data.post.medias!.findIndex((media) => media.id === data.media.id) + 1
-      ).toString(),
+      data.post
+        .medias!.findIndex((media) => media.id === data.media.id)
+        .toString(),
   },
   CONTENT: {
     desc: '推文内容',

@@ -1,14 +1,16 @@
 /* eslint-disable react/prop-types */
 import { Avatar, Button, Input, Space, App } from 'antd';
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import { PageHeader } from '../components/PageHeader';
 import { PostListGridView } from '../components/homepage/PostListGridView';
 import { DownloadController } from '../components/homepage/DownloadController';
+import { PostPreview } from '../components/homepage/PostPreview';
 import { useAppStateStore } from '../stores/app-state';
 import { useHomepageStore } from '../stores/homepage';
 import { useDownloadStore } from '../stores/download';
 import { buildUserUrl, parsePostUrl } from '../twitter/url';
 import { getTweetDetail } from '../twitter/api';
+import { TwitterPost } from '../interfaces/TwitterPost';
 
 export const Homepage: React.FC = () => {
   const { message } = App.useApp();
@@ -31,27 +33,24 @@ export const Homepage: React.FC = () => {
   const { batchCreateDownloadTask } = useDownloadStore((s) => ({
     batchCreateDownloadTask: s.batchCreateDownloadTask,
   }));
+  const [postPreview, setPostPreview] = useState<TwitterPost | null>(null);
+  const [postDownloading, setPostDownloading] = useState(false);
 
-  const startDownloadSinglePost = async (url: string) => {
+  // 解析单条帖子并展示预览（不自动下载）
+  const parseSinglePost = async (url: string) => {
     const parsed = parsePostUrl(url);
     if (!parsed) return false;
 
     setKeyword(url.trim());
+    clearUser();
+    clearMediaList();
+    setPostPreview(null);
+
     const hide = message.loading('正在解析帖子…', 0);
     try {
       const post = await getTweetDetail(parsed.postId);
-      const medias = post.medias || [];
-      if (medias.length === 0) {
-        message.warning('该帖子没有可下载的媒体');
-        return true;
-      }
-      await batchCreateDownloadTask(
-        medias.map((media) => ({ post, media })),
-      );
+      setPostPreview(post);
       addSearchHistory(url.trim());
-      message.success(
-        `已创建 ${medias.length} 个下载任务，请到下载管理页查看`,
-      );
     } catch (err: any) {
       log.error(err);
       message.error(`解析帖子失败：${err?.message || '未知原因'}`);
@@ -61,14 +60,38 @@ export const Homepage: React.FC = () => {
     return true;
   };
 
+  const downloadPreviewPost = async () => {
+    if (!postPreview) return;
+    const medias = postPreview.medias || [];
+    if (medias.length === 0) {
+      message.warning('该帖子没有可下载的媒体');
+      return;
+    }
+    setPostDownloading(true);
+    try {
+      await batchCreateDownloadTask(
+        medias.map((media) => ({ post: postPreview, media })),
+      );
+      message.success(
+        `已创建 ${medias.length} 个下载任务，请到下载管理页查看`,
+      );
+    } catch (err: any) {
+      log.error(err);
+      message.error(`创建下载任务失败：${err?.message || '未知原因'}`);
+    } finally {
+      setPostDownloading(false);
+    }
+  };
+
   const startSearch = async (sn: string) => {
     if (!sn) return;
     sn = sn.trim();
 
-    // 若输入是帖子链接，则直接解析单条帖子
-    if (await startDownloadSinglePost(sn)) return;
+    // 若输入是帖子链接，则解析单条帖子并预览
+    if (await parseSinglePost(sn)) return;
 
     setKeyword(sn);
+    setPostPreview(null);
 
     if (searchAbortControllerRef.current) {
       searchAbortControllerRef.current.abort('Another search');
@@ -161,6 +184,13 @@ export const Homepage: React.FC = () => {
               </section>
             )}
           </section>
+          {postPreview && (
+            <PostPreview
+              post={postPreview}
+              downloading={postDownloading}
+              onDownload={downloadPreviewPost}
+            />
+          )}
           {userInfo.data && (
             <>
               <DownloadController />
