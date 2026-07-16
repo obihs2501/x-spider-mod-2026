@@ -12,6 +12,7 @@ export const DEFAULT_SETTINGS: Settings = {
     fileNameTemplate:
       '%POST_TIME% %USER_SCREEN_NAME% %POST_ID%-%MEDIA_INDEX%%EXT%',
     sameFileSkip: true,
+    consecutiveSkipThreshold: 20,
   },
   app: {
     autoCheckUpdate: true,

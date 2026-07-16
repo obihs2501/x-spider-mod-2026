@@ -201,13 +201,14 @@ export const Homepage: React.FC = () => {
               onClose={() => setPostPreview(null)}
             />
           )}
-          {userInfo.data && (
+          {(userInfo.data || postPreview) && (
             <>
-              <DownloadController />
-              <section
-                aria-label="用户信息"
-                className="bg-white border-[1px] border-gray-300 rounded-md mt-4"
-              >
+              {userInfo.data && <DownloadController />}
+              {userInfo.data && (
+                <section
+                  aria-label="用户信息"
+                  className="bg-white border-[1px] border-gray-300 rounded-md mt-4"
+                >
                 <span className="sr-only" role="status">
                   用户信息加载完成，当前搜索用户：
                   {userInfo.data.name || '未知用户'}

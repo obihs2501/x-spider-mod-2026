@@ -26,6 +26,7 @@ export interface Settings_V2 {
     dirTemplate: string;
     fileNameTemplate: string;
     sameFileSkip: boolean;
+    consecutiveSkipThreshold: number;
   };
   app: {
     autoCheckUpdate: boolean;

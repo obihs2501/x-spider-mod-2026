@@ -82,6 +82,20 @@ export const Settings: React.FC = () => {
         >
           <Switch />
         </Item>
+        <Item
+          settingKey="consecutiveSkipThreshold"
+          label="连续跳过阈值"
+          description="从最新帖子开始下载时，连续遇到本地已有文件超过此数值则停止（设为 0 则全部尝试）"
+          validator={(value) => {
+            return Joi.number()
+              .integer()
+              .min(0)
+              .message('请输入 0 或正整数')
+              .validate(value).error?.message;
+          }}
+        >
+          <Input type="number" min={0} placeholder="例如：20" />
+        </Item>
       </Section>
       <Section title="代理" name="proxy" titleIcon={<GlobalOutlined />}>
         <Item label="启用代理" settingKey="enable" valuePropName="checked">

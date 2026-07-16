@@ -452,6 +452,10 @@ async function runCreationTask(task: CreationTask, abortSignal: AbortSignal) {
     return acc + (elem.medias?.length || 0);
   }, 0);
 
+  // 连续本地已存在文件计数，用于提前终止
+  let consecutiveSkipCount = 0;
+  const consecutiveSkipThreshold = settings.download.consecutiveSkipThreshold || 0;
+
   while (nextCursor !== null && now.isAfter(since)) {
     if (abortSignal.aborted) {
       return;
@@ -498,11 +502,13 @@ async function runCreationTask(task: CreationTask, abortSignal: AbortSignal) {
 
     const paramsList: CreateDownloadTaskParams[] = [];
     const localIndex = useLocalIndexStore.getState();
+    let pageHasNewFiles = false;
 
     for (const post of filteredPosts) {
       // 本地索引中已有该帖（文件名含帖子 ID），直接跳过
       if (settings.download.sameFileSkip && localIndex.hasPost(post.id)) {
         skipCount += post.medias?.length || 0;
+        consecutiveSkipCount += post.medias?.length || 0;
         log().info('Skip because local index has post', post.id);
         continue;
       }
@@ -523,6 +529,7 @@ async function runCreationTask(task: CreationTask, abortSignal: AbortSignal) {
         log().info('Resolved file path', filePath);
         if (settings.download.sameFileSkip && (await fs.exists(filePath))) {
           skipCount++;
+          consecutiveSkipCount++;
           log().info('Skip because sameFileSkip', media);
           continue;
         }
@@ -530,6 +537,8 @@ async function runCreationTask(task: CreationTask, abortSignal: AbortSignal) {
           media,
           post,
         });
+        pageHasNewFiles = true;
+        consecutiveSkipCount = 0;
       }
     }
 
@@ -541,6 +550,12 @@ async function runCreationTask(task: CreationTask, abortSignal: AbortSignal) {
         completeCount,
         skipCount,
       });
+
+      // 检查连续跳过阈值，提前终止
+      if (consecutiveSkipThreshold > 0 && consecutiveSkipCount >= consecutiveSkipThreshold) {
+        log().info(`连续跳过 ${consecutiveSkipCount} 个文件，达到阈值 ${consecutiveSkipThreshold}，停止下载`);
+        break;
+      }
       continue;
     }
 
