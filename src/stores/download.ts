@@ -461,6 +461,11 @@ async function runCreationTask(task: CreationTask, abortSignal: AbortSignal) {
     const { twitterPosts, cursor } = await getListFn(user.id, nextCursor);
     if (abortSignal.aborted) break;
     nextCursor = cursor;
+
+    // 每页之间延迟，避免触发 X API 速率限制
+    if (nextCursor) {
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
     now = R.last(twitterPosts)?.createdAt || now;
     log().info('Now', now.format('YYYY-MM-DD'), 'next cursor', nextCursor);
     const filteredPosts = twitterPosts.filter(
