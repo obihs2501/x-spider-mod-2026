@@ -52,6 +52,10 @@
       "fs": {
         "all": true,
         "scope": ["**"]
+      },
+      "protocol": {
+        "asset": true,
+        "assetScope": ["**"]
       }
     },
     "bundle": {
@@ -72,11 +76,7 @@
       ]
     },
     "security": {
-      "csp": null,
-      "assetProtocol": {
-        "enable": true,
-        "scope": ["**"]
-      }
+      "csp": null
     },
     "windows": [
       {
