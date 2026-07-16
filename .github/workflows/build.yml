@@ -44,6 +44,16 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
       - name: Install dependencies
         run: pnpm i
+      - name: Prepare aria2c sidecar
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force -Path src-tauri/binaries | Out-Null
+          $url = 'https://github.com/aria2/aria2/releases/download/release-1.37.0/aria2-1.37.0-win-64bit-build1.zip'
+          Invoke-WebRequest -Uri $url -OutFile aria2.zip
+          Expand-Archive -Path aria2.zip -DestinationPath aria2_tmp -Force
+          $exe = Get-ChildItem -Path aria2_tmp -Recurse -Filter aria2c.exe | Select-Object -First 1
+          Copy-Item $exe.FullName 'src-tauri/binaries/aria2c-x86_64-pc-windows-msvc.exe'
       - name: Type check
         run: pnpm run typeCheck
       - name: Build
