@@ -502,7 +502,6 @@ async function runCreationTask(task: CreationTask, abortSignal: AbortSignal) {
 
     const paramsList: CreateDownloadTaskParams[] = [];
     const localIndex = useLocalIndexStore.getState();
-    let pageHasNewFiles = false;
 
     for (const post of filteredPosts) {
       // 本地索引中已有该帖（文件名含帖子 ID），直接跳过
