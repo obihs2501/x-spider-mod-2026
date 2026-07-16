@@ -6,7 +6,9 @@ import { PostListGridView } from '../components/homepage/PostListGridView';
 import { DownloadController } from '../components/homepage/DownloadController';
 import { useAppStateStore } from '../stores/app-state';
 import { useHomepageStore } from '../stores/homepage';
-import { buildUserUrl } from '../twitter/url';
+import { useDownloadStore } from '../stores/download';
+import { buildUserUrl, parsePostUrl } from '../twitter/url';
+import { getTweetDetail } from '../twitter/api';
 
 export const Homepage: React.FC = () => {
   const { message } = App.useApp();
@@ -26,10 +28,46 @@ export const Homepage: React.FC = () => {
       cookieString: s.cookieString,
     }));
   const searchAbortControllerRef = useRef<AbortController>();
+  const { batchCreateDownloadTask } = useDownloadStore((s) => ({
+    batchCreateDownloadTask: s.batchCreateDownloadTask,
+  }));
+
+  const startDownloadSinglePost = async (url: string) => {
+    const parsed = parsePostUrl(url);
+    if (!parsed) return false;
+
+    setKeyword(url.trim());
+    const hide = message.loading('正在解析帖子…', 0);
+    try {
+      const post = await getTweetDetail(parsed.postId);
+      const medias = post.medias || [];
+      if (medias.length === 0) {
+        message.warning('该帖子没有可下载的媒体');
+        return true;
+      }
+      await batchCreateDownloadTask(
+        medias.map((media) => ({ post, media })),
+      );
+      addSearchHistory(url.trim());
+      message.success(
+        `已创建 ${medias.length} 个下载任务，请到下载管理页查看`,
+      );
+    } catch (err: any) {
+      log.error(err);
+      message.error(`解析帖子失败：${err?.message || '未知原因'}`);
+    } finally {
+      hide();
+    }
+    return true;
+  };
 
   const startSearch = async (sn: string) => {
     if (!sn) return;
     sn = sn.trim();
+
+    // 若输入是帖子链接，则直接解析单条帖子
+    if (await startDownloadSinglePost(sn)) return;
+
     setKeyword(sn);
 
     if (searchAbortControllerRef.current) {
@@ -58,19 +96,19 @@ export const Homepage: React.FC = () => {
               <Input
                 type="search"
                 autoComplete="search"
-                disabled={userInfo.loading || !cookieString}
+                disabled={userInfo.loading}
                 onPressEnter={() => startSearch(keyword)}
                 value={keyword}
                 onChange={(e) => setKeyword(e.target.value)}
                 placeholder={
                   cookieString
-                    ? '请输入用户 ID，如：shiratamacaron'
-                    : '请先登录后再搜索'
+                    ? '输入用户 ID 或帖子链接，如：shiratamacaron 或 https://x.com/xxx/status/123'
+                    : '免登录模式：输入用户 ID 或帖子链接（仅公开账号）'
                 }
                 className="text-center"
               />
               <Button
-                disabled={!keyword || !cookieString}
+                disabled={!keyword}
                 loading={userInfo.loading}
                 onClick={() => startSearch(keyword)}
                 type="primary"

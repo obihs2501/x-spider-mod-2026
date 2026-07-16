@@ -516,3 +516,74 @@ export async function getUserTweets(
     cursor: nextCursor,
   };
 }
+
+/**
+ * 解析单条帖子（无需登录，游客令牌即可访问公开帖子）。
+ * 返回包含媒体信息的 TwitterPost。
+ */
+export async function getTweetDetail(tweetId: string): Promise<TwitterPost> {
+  const resp = await request({
+    method: 'GET',
+    url: `https://${HOST}/i/api/graphql/0hWvDhmW8YQ-S_ib3azIrw/TweetResultByRestId`,
+    responseType: 'json',
+    query: {
+      variables: JSON.stringify({
+        tweetId,
+        withCommunity: false,
+        includePromotedContent: false,
+        withVoice: false,
+      }),
+      features: JSON.stringify({
+        creator_subscriptions_tweet_preview_api_enabled: true,
+        communities_web_enable_tweet_community_results_fetch: true,
+        c9s_tweet_anatomy_moderator_badge_enabled: true,
+        articles_preview_enabled: true,
+        tweetypie_unmention_optimization_enabled: true,
+        responsive_web_edit_tweet_api_enabled: true,
+        graphql_is_translatable_rweb_tweet_is_translatable_enabled: true,
+        view_counts_everywhere_api_enabled: true,
+        longform_notetweets_consumption_enabled: true,
+        responsive_web_twitter_article_tweet_consumption_enabled: true,
+        tweet_awards_web_tipping_enabled: false,
+        creator_subscriptions_quote_tweet_preview_enabled: false,
+        freedom_of_speech_not_reach_fetch_enabled: true,
+        standardized_nudges_misinfo: true,
+        tweet_with_visibility_results_prefer_gql_limited_actions_policy_enabled:
+          true,
+        rweb_video_timestamps_enabled: true,
+        longform_notetweets_rich_text_read_enabled: true,
+        longform_notetweets_inline_media_enabled: true,
+        rweb_tipjar_consumption_enabled: true,
+        responsive_web_graphql_exclude_directive_enabled: true,
+        verified_phone_label_enabled: false,
+        responsive_web_graphql_skip_user_profile_image_extensions_enabled:
+          false,
+        responsive_web_graphql_timeline_navigation_enabled: true,
+        responsive_web_enhance_cards_enabled: false,
+      }),
+      fieldToggles: JSON.stringify({
+        withArticleRichContentState: true,
+        withArticlePlainText: false,
+        withGrokAnalyze: false,
+        withDisallowedReplyControls: false,
+      }),
+    },
+    headers: await getAuthedHeaders(),
+  });
+  ensureResponse(resp);
+
+  let result = R.path<any>(['data', 'tweetResult', 'result'])(resp.body);
+  if (result?.__typename === 'TweetWithVisibilityResults') {
+    result = result.tweet;
+  }
+
+  if (!result || !result.legacy) {
+    throw new Error('无法解析该帖子（可能已删除、受保护或需要登录）');
+  }
+
+  const posts = mapTwitterPosts([result]);
+  if (posts.length === 0) {
+    throw new Error('该帖子解析失败');
+  }
+  return posts[0];
+}

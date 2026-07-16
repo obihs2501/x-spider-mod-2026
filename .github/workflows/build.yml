@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: build-${{ github.ref }}
@@ -63,3 +63,15 @@ jobs:
         with:
           name: x-spider-installer
           path: src-tauri/target/release/bundle/nsis/*
+      - name: Release
+        if: github.ref == 'refs/heads/main'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          TAG="v${VERSION}-build.${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" ./src-tauri/target/release/bundle/nsis/* \
+            --title "$TAG" \
+            --notes "自动构建版本。新增：免登录（游客令牌）下载公开账号原画质媒体、单条帖子链接解析下载。" \
+            --latest
