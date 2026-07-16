@@ -8,7 +8,7 @@ import {
   PlayCircleFilled,
   ReloadOutlined,
 } from '@ant-design/icons';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { PageHeader } from '../components/PageHeader';
 import { useSettingsStore } from '../stores/settings';
 import {
@@ -81,6 +81,10 @@ export const Gallery: React.FC = () => {
     setColumns,
     fitMode,
     setFitMode,
+    folderSortOrder,
+    setFolderSortOrder,
+    mediaSortOrder,
+    setMediaSortOrder,
   } = useGalleryStore();
 
   // 顶层：只读取一层子文件夹列表（不递归，开销极小）
@@ -104,7 +108,6 @@ export const Gallery: React.FC = () => {
           // 非目录，跳过
         }
       }
-      result.sort((a, b) => a.name.localeCompare(b.name));
       setFolders(result);
       setFoldersLoaded(true);
     } catch (err: any) {
@@ -146,7 +149,6 @@ export const Gallery: React.FC = () => {
           }
         };
         walk(entries);
-        list.sort((a, b) => b.name.localeCompare(a.name));
         setMedias(list);
       } catch (err: any) {
         log.error(err);
@@ -165,7 +167,28 @@ export const Gallery: React.FC = () => {
     }
   }, [foldersLoaded, loadFolders]);
 
-  const visibleMedias = medias.slice(0, visibleCount);
+  const compareNames = useCallback(
+    (a: string, b: string) =>
+      a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }),
+    [],
+  );
+  const sortedFolders = useMemo(
+    () =>
+      [...folders].sort((a, b) => {
+        const result = compareNames(a.name, b.name);
+        return folderSortOrder === 'asc' ? result : -result;
+      }),
+    [compareNames, folderSortOrder, folders],
+  );
+  const sortedMedias = useMemo(
+    () =>
+      [...medias].sort((a, b) => {
+        const result = compareNames(a.name, b.name);
+        return mediaSortOrder === 'asc' ? result : -result;
+      }),
+    [compareNames, mediaSortOrder, medias],
+  );
+  const visibleMedias = sortedMedias.slice(0, visibleCount);
 
   return (
     <div className="flex flex-col h-screen">
@@ -221,6 +244,16 @@ export const Gallery: React.FC = () => {
                   { label: '完整显示', value: 'contain' },
                 ]}
               />
+              <span className="text-gray-400">名称</span>
+              <Segmented
+                size="small"
+                value={mediaSortOrder}
+                onChange={(v) => setMediaSortOrder(v as 'asc' | 'desc')}
+                options={[
+                  { label: '升序', value: 'asc' },
+                  { label: '降序', value: 'desc' },
+                ]}
+              />
             </span>
           </>
         ) : (
@@ -245,6 +278,25 @@ export const Gallery: React.FC = () => {
             >
               打开根目录
             </Button>
+            <span className="ml-auto flex items-center gap-2 text-sm">
+              <span className="text-gray-400">每行</span>
+              <Segmented
+                size="small"
+                value={columns}
+                onChange={(v) => setColumns(v as number)}
+                options={COLUMN_OPTIONS}
+              />
+              <span className="text-gray-400">名称</span>
+              <Segmented
+                size="small"
+                value={folderSortOrder}
+                onChange={(v) => setFolderSortOrder(v as 'asc' | 'desc')}
+                options={[
+                  { label: '升序', value: 'asc' },
+                  { label: '降序', value: 'desc' },
+                ]}
+              />
+            </span>
           </>
         )}
       </div>
@@ -265,8 +317,10 @@ export const Gallery: React.FC = () => {
           {folders.length === 0 ? (
             <Empty description="保存目录下暂无文件夹" className="mt-20" />
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-              {folders.map((f) => (
+            <div
+              className={`grid ${COLUMN_CLASS[columns] || 'grid-cols-5'} gap-3`}
+            >
+              {sortedFolders.map((f) => (
                 <button
                   key={f.path}
                   className="flex items-center gap-3 p-4 bg-white border-[1px] rounded-xl text-left hover:shadow-md transition-shadow"

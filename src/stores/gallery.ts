@@ -30,6 +30,10 @@ export interface GalleryStore {
   setColumns: (c: number) => void;
   fitMode: 'cover' | 'contain';
   setFitMode: (m: 'cover' | 'contain') => void;
+  folderSortOrder: 'asc' | 'desc';
+  setFolderSortOrder: (o: 'asc' | 'desc') => void;
+  mediaSortOrder: 'asc' | 'desc';
+  setMediaSortOrder: (o: 'asc' | 'desc') => void;
 }
 
 export const GALLERY_PAGE_SIZE = 100;
@@ -54,4 +58,8 @@ export const useGalleryStore = create<GalleryStore>((set) => ({
   setColumns: (c) => set({ columns: c }),
   fitMode: 'cover',
   setFitMode: (m) => set({ fitMode: m }),
+  folderSortOrder: 'asc',
+  setFolderSortOrder: (o) => set({ folderSortOrder: o }),
+  mediaSortOrder: 'desc',
+  setMediaSortOrder: (o) => set({ mediaSortOrder: o }),
 }));

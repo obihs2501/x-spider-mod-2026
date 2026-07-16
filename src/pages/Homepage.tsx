@@ -1,5 +1,6 @@
 /* eslint-disable react/prop-types */
 import { Avatar, Button, Collapse, Input, Space, App } from 'antd';
+import { ArrowLeftOutlined } from '@ant-design/icons';
 import React, { useRef, useState } from 'react';
 import { PageHeader } from '../components/PageHeader';
 import { PostListGridView } from '../components/homepage/PostListGridView';
@@ -19,6 +20,7 @@ export const Homepage: React.FC = () => {
     userInfo,
     clearUser,
     loadUser,
+    resetToInitial,
     clearPostList: clearMediaList,
     postPreview,
     setPostPreview,
@@ -72,9 +74,7 @@ export const Homepage: React.FC = () => {
       await batchCreateDownloadTask(
         medias.map((media) => ({ post: postPreview, media })),
       );
-      message.success(
-        `已创建 ${medias.length} 个下载任务，请到下载管理页查看`,
-      );
+      message.success(`已创建 ${medias.length} 个下载任务，请到下载管理页查看`);
     } catch (err: any) {
       log.error(err);
       message.error(`创建下载任务失败：${err?.message || '未知原因'}`);
@@ -138,6 +138,15 @@ export const Homepage: React.FC = () => {
               >
                 加载
               </Button>
+              {(userInfo.loading || userInfo.data || postPreview) && (
+                <Button
+                  icon={<ArrowLeftOutlined />}
+                  onClick={resetToInitial}
+                  title="清空当前解析结果并返回初始状态"
+                >
+                  返回初始
+                </Button>
+              )}
               {userInfo.loading && (
                 <span className="sr-only" role="status">
                   加载用户信息中

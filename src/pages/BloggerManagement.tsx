@@ -27,17 +27,25 @@ export const BloggerManagement: React.FC = () => {
   const postIdCount = useLocalIndexStore((s) => s.postIds.length);
   const importFromDisk = useLocalIndexStore((s) => s.importFromDisk);
   const setRoute = useRouteStore((s) => s.setRoute);
-  const setKeyword = useHomepageStore((s) => s.setKeyword);
+  const { resetToInitial, setKeyword, loadUser } = useHomepageStore((s) => ({
+    resetToInitial: s.resetToInitial,
+    setKeyword: s.setKeyword,
+    loadUser: s.loadUser,
+  }));
 
   const [importLoading, setImportLoading] = useState(false);
   const [incLoading, setIncLoading] = useState('');
+  const [homepageLoading, setHomepageLoading] = useState('');
   const [search, setSearch] = useState('');
 
   const onImport = async () => {
     setImportLoading(true);
     try {
-      const { total, added, bloggers: newBloggers } =
-        await importFromDisk(saveDirBase);
+      const {
+        total,
+        added,
+        bloggers: newBloggers,
+      } = await importFromDisk(saveDirBase);
       message.success(
         `扫描完成：识别 ${total} 个帖子 ID（新增 ${added}），导入 ${newBloggers} 个新博主。下载时将自动跳过已存在的帖子。`,
       );
@@ -71,10 +79,21 @@ export const BloggerManagement: React.FC = () => {
     }
   };
 
-  const gotoHomepage = (screenName: string) => {
+  const gotoHomepage = async (screenName: string) => {
+    setHomepageLoading(screenName);
+    resetToInitial();
     setKeyword(screenName);
     const home = ROUTES.find((r) => r.id === 'home');
     if (home) setRoute(home);
+
+    try {
+      await loadUser(screenName);
+    } catch (err: any) {
+      log.error(err);
+      message.error(`加载博主失败：${err?.message || '未知原因'}`);
+    } finally {
+      setHomepageLoading('');
+    }
   };
 
   const filtered = search
@@ -165,9 +184,10 @@ export const BloggerManagement: React.FC = () => {
                   }
                   title={
                     <button
-                      className="bg-transparent hover:text-ant-color-primary transition-colors"
+                      className="bg-transparent hover:text-ant-color-primary transition-colors disabled:opacity-50"
+                      disabled={homepageLoading === b.screenName}
                       onClick={() => gotoHomepage(b.screenName)}
-                      title="到主页加载该博主"
+                      title="到主页并立即解析该博主"
                     >
                       {b.name || b.screenName}
                       <span className="text-gray-400 font-normal ml-2">

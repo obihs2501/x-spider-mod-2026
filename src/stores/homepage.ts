@@ -30,6 +30,7 @@ export interface HomepageStore {
   userInfo: UserInfoRequest;
   loadUser: (screenName: string) => Promise<void>;
   clearUser: () => void;
+  resetToInitial: () => void;
 
   postList: PostListRequest;
   clearPostList: () => void;
@@ -57,6 +58,10 @@ export const useHomepageStore = create<HomepageStore>((set, get) => ({
     data: undefined,
   },
   loadUser: async (screenName: string) => {
+    loadUserAbortController.abort();
+    loadUserAbortController = new AbortController();
+    const abortController = loadUserAbortController;
+
     set({
       userInfo: {
         data: undefined,
@@ -64,13 +69,10 @@ export const useHomepageStore = create<HomepageStore>((set, get) => ({
       },
     });
 
-    loadUserAbortController.abort();
-    loadUserAbortController = new AbortController();
-
     try {
       const value = await getUser(screenName);
 
-      if (loadUserAbortController.signal.aborted) {
+      if (abortController.signal.aborted) {
         return;
       }
 
@@ -81,6 +83,9 @@ export const useHomepageStore = create<HomepageStore>((set, get) => ({
         },
       });
     } catch (err: any) {
+      if (abortController.signal.aborted) {
+        return;
+      }
       set({
         userInfo: {
           data: undefined,
@@ -97,6 +102,23 @@ export const useHomepageStore = create<HomepageStore>((set, get) => ({
         data: undefined,
       },
     }),
+  resetToInitial: () => {
+    loadUserAbortController.abort();
+    loadPostListAbortController.abort();
+    set({
+      keyword: '',
+      postPreview: null,
+      userInfo: {
+        loading: false,
+        data: undefined,
+      },
+      postList: {
+        cursor: null,
+        list: undefined,
+        loading: false,
+      },
+    });
+  },
 
   postList: {
     list: undefined,
@@ -116,6 +138,7 @@ export const useHomepageStore = create<HomepageStore>((set, get) => ({
   loadPostList: async () => {
     loadPostListAbortController.abort();
     loadPostListAbortController = new AbortController();
+    const abortController = loadPostListAbortController;
     const state = get();
     const userInfo = state.userInfo.data;
 
@@ -134,7 +157,7 @@ export const useHomepageStore = create<HomepageStore>((set, get) => ({
     try {
       const { cursor, twitterPosts } = await getUserMedias(userInfo.id);
 
-      if (loadPostListAbortController.signal.aborted) {
+      if (abortController.signal.aborted) {
         return;
       }
 
@@ -146,6 +169,9 @@ export const useHomepageStore = create<HomepageStore>((set, get) => ({
         },
       });
     } catch (err: any) {
+      if (abortController.signal.aborted) {
+        return;
+      }
       log.error('Failed to load post list', err);
       set({
         postList: {
@@ -183,6 +209,7 @@ export const useHomepageStore = create<HomepageStore>((set, get) => ({
 
     loadPostListAbortController.abort();
     loadPostListAbortController = new AbortController();
+    const abortController = loadPostListAbortController;
 
     try {
       const { twitterPosts, cursor } = await getUserMedias(
@@ -190,7 +217,7 @@ export const useHomepageStore = create<HomepageStore>((set, get) => ({
         postList.cursor,
       );
 
-      if (loadPostListAbortController.signal.aborted) {
+      if (abortController.signal.aborted) {
         return;
       }
 
@@ -202,8 +229,11 @@ export const useHomepageStore = create<HomepageStore>((set, get) => ({
         },
       });
     } catch (err: any) {
+      if (abortController.signal.aborted) {
+        return;
+      }
       set(
-        produce(state, (draft) => {
+        produce(get(), (draft) => {
           draft.postList.loading = false;
         }),
       );
