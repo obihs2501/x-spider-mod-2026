@@ -17,6 +17,7 @@ export const DEFAULT_SETTINGS: Settings = {
     autoCheckUpdate: true,
     acceptPrerelease: false,
     writeLogs: false,
+    theme: 'light',
   },
 };
 

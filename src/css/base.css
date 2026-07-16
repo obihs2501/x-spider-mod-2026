@@ -28,3 +28,51 @@ body {
   background-color: transparent;
 }
 
+/* ========== 深色模式（.theme-dark 挂在 <html> 上） ========== */
+.theme-dark body {
+  background-color: #262624;
+  color: #edece4;
+}
+.theme-dark ::selection {
+  background-color: rgba(217, 119, 87, 0.35);
+}
+.theme-dark ::-webkit-scrollbar-thumb {
+  background-color: #4a4945;
+}
+.theme-dark ::-webkit-scrollbar-thumb:hover {
+  background-color: #5c5b56;
+}
+/* 覆盖组件里硬编码的浅色工具类 */
+.theme-dark .bg-\[\#FAF9F5\] {
+  background-color: #262624 !important;
+}
+.theme-dark .bg-white {
+  background-color: #30302e !important;
+}
+.theme-dark .bg-\[\#F0EEE6\] {
+  background-color: #1f1e1d !important;
+}
+.theme-dark .border-\[\#E8E6DC\],
+.theme-dark .border-gray-300 {
+  border-color: #3f3e3a !important;
+}
+.theme-dark .text-\[\#3D3929\] {
+  color: #edece4 !important;
+}
+.theme-dark .text-gray-800 {
+  color: #edece4 !important;
+}
+.theme-dark .text-gray-500,
+.theme-dark .text-gray-600 {
+  color: #a8a69e !important;
+}
+.theme-dark .hover\:bg-white\/60:hover {
+  background-color: rgba(255, 255, 255, 0.08) !important;
+}
+.theme-dark .hover\:shadow-md:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5) !important;
+}
+.theme-dark img {
+  filter: brightness(0.95);
+}
+

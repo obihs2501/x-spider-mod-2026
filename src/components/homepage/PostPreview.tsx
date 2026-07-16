@@ -1,5 +1,6 @@
 /* eslint-disable react/prop-types */
 import {
+  CloseOutlined,
   CommentOutlined,
   DownloadOutlined,
   EyeOutlined,
@@ -7,7 +8,7 @@ import {
   PlayCircleFilled,
   RetweetOutlined,
 } from '@ant-design/icons';
-import { Avatar, Button, Tag } from 'antd';
+import { Avatar, Button, Image, Tag } from 'antd';
 import clsx from 'clsx';
 import React from 'react';
 import MediaType from '../../enums/MediaType';
@@ -18,6 +19,7 @@ export interface PostPreviewProps {
   post: TwitterPost;
   downloading?: boolean;
   onDownload: () => void;
+  onClose?: () => void;
 }
 
 /** 去掉推文末尾指向媒体的 t.co 短链 */
@@ -40,6 +42,7 @@ export const PostPreview: React.FC<PostPreviewProps> = ({
   post,
   downloading,
   onDownload,
+  onClose,
 }) => {
   const medias = post.medias || [];
   const text = cleanFullText(post.fullText);
@@ -47,8 +50,19 @@ export const PostPreview: React.FC<PostPreviewProps> = ({
   return (
     <section
       aria-label="帖子预览"
-      className="bg-white border-[1px] border-gray-300 rounded-xl mt-4 p-4 max-w-[600px]"
+      className="relative bg-white border-[1px] border-gray-300 rounded-xl mt-4 p-4 max-w-[600px]"
     >
+      {onClose && (
+        <Button
+          type="text"
+          size="small"
+          aria-label="关闭预览"
+          title="关闭预览"
+          icon={<CloseOutlined />}
+          onClick={onClose}
+          className="!absolute right-2 top-2 z-10"
+        />
+      )}
       {/* 头部：头像 + 昵称 + 用户名 */}
       <a
         className="flex items-center"
@@ -68,9 +82,9 @@ export const PostPreview: React.FC<PostPreviewProps> = ({
         </div>
       </a>
 
-      {/* 正文 */}
+      {/* 正文（可选中复制） */}
       {text && (
-        <p className="mt-3 text-[15px] whitespace-pre-wrap break-words">
+        <p className="mt-3 text-[15px] whitespace-pre-wrap break-words select-text cursor-text">
           {text}
         </p>
       )}
@@ -86,32 +100,42 @@ export const PostPreview: React.FC<PostPreviewProps> = ({
         </div>
       )}
 
-      {/* 媒体网格 */}
+      {/* 媒体网格（点击可放大原图） */}
       {medias.length > 0 && (
-        <div
-          className={clsx(
-            'mt-3 grid gap-1 rounded-2xl overflow-hidden',
-            medias.length === 1 ? 'grid-cols-1' : 'grid-cols-2',
-          )}
-        >
-          {medias.map((media, index) => (
-            <div key={media.id || index} className="relative">
-              <img
-                src={`${media.url}?format=jpg&name=small`}
-                alt={`媒体 p${index}`}
-                className="w-full h-full object-cover max-h-[420px]"
-              />
-              {media.type !== MediaType.Photo && (
-                <PlayCircleFilled className="absolute inset-0 m-auto w-fit h-fit text-white text-5xl drop-shadow-lg" />
-              )}
-              <span className="absolute left-1 bottom-1 bg-black/60 text-white text-xs px-1.5 py-0.5 rounded">
-                p{index}
-                {media.type === MediaType.Video && ' · 视频'}
-                {media.type === MediaType.Gif && ' · GIF'}
-              </span>
-            </div>
-          ))}
-        </div>
+        <Image.PreviewGroup>
+          <div
+            className={clsx(
+              'mt-3 grid gap-1 rounded-2xl overflow-hidden',
+              medias.length === 1 ? 'grid-cols-1' : 'grid-cols-2',
+            )}
+          >
+            {medias.map((media, index) => (
+              <div key={media.id || index} className="relative">
+                <Image
+                  src={`${media.url}?format=jpg&name=small`}
+                  preview={{
+                    src: `${media.url}?format=jpg&name=orig`,
+                  }}
+                  alt={`媒体 p${index}`}
+                  width="100%"
+                  style={{
+                    objectFit: 'cover',
+                    maxHeight: 420,
+                    width: '100%',
+                  }}
+                />
+                {media.type !== MediaType.Photo && (
+                  <PlayCircleFilled className="absolute inset-0 m-auto w-fit h-fit text-white text-5xl drop-shadow-lg pointer-events-none" />
+                )}
+                <span className="absolute left-1 bottom-1 bg-black/60 text-white text-xs px-1.5 py-0.5 rounded pointer-events-none">
+                  p{index}
+                  {media.type === MediaType.Video && ' · 视频'}
+                  {media.type === MediaType.Gif && ' · GIF'}
+                </span>
+              </div>
+            ))}
+          </div>
+        </Image.PreviewGroup>
       )}
 
       {/* 时间 + 互动数据 */}

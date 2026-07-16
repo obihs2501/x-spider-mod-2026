@@ -1,10 +1,11 @@
 /* eslint-disable react/prop-types */
-import { Avatar, Button, Input, Space, App } from 'antd';
+import { Avatar, Button, Collapse, Input, Space, App } from 'antd';
 import React, { useRef, useState } from 'react';
 import { PageHeader } from '../components/PageHeader';
 import { PostListGridView } from '../components/homepage/PostListGridView';
 import { DownloadController } from '../components/homepage/DownloadController';
 import { PostPreview } from '../components/homepage/PostPreview';
+import { BloggerList } from '../components/homepage/BloggerList';
 import { useAppStateStore } from '../stores/app-state';
 import { useHomepageStore } from '../stores/homepage';
 import { useDownloadStore } from '../stores/download';
@@ -145,50 +146,61 @@ export const Homepage: React.FC = () => {
               )}
             </Space.Compact>
             {searchHistory.length > 0 && (
-              <section
-                aria-label="搜索历史"
-                className="text-sm mt-2"
-                tabIndex={0}
-              >
-                <span>
-                  搜索历史（
-                  <Button
-                    type="link"
-                    size="small"
-                    onClick={clearSearchHistory}
-                    className="!p-0"
-                  >
-                    清空
-                    <span className="sr-only">历史记录</span>
-                  </Button>
-                  ） ：
-                </span>
-                <ul className="inline">
-                  {searchHistory.map((sn) => (
-                    <li key={sn} className="inline">
-                      <Button
-                        disabled={userInfo.loading}
-                        type="link"
-                        size="small"
-                        onClick={() => {
-                          setKeyword(sn);
-                          startSearch(sn);
-                        }}
-                      >
-                        <span className="sr-only">搜索</span>
-                        {sn}
-                      </Button>
-                    </li>
-                  ))}
-                </ul>
-              </section>
+              <Collapse
+                ghost
+                size="small"
+                className="mt-1 -ml-4"
+                items={[
+                  {
+                    key: 'history',
+                    label: (
+                      <span className="text-sm">
+                        搜索历史（{searchHistory.length}）
+                        <Button
+                          type="link"
+                          size="small"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            clearSearchHistory();
+                          }}
+                          className="!p-0 ml-2"
+                        >
+                          清空
+                        </Button>
+                      </span>
+                    ),
+                    children: (
+                      <ul className="inline text-sm" aria-label="搜索历史">
+                        {searchHistory.map((sn) => (
+                          <li key={sn} className="inline">
+                            <Button
+                              disabled={userInfo.loading}
+                              type="link"
+                              size="small"
+                              onClick={() => {
+                                setKeyword(sn);
+                                startSearch(sn);
+                              }}
+                            >
+                              <span className="sr-only">搜索</span>
+                              {sn}
+                            </Button>
+                          </li>
+                        ))}
+                      </ul>
+                    ),
+                  },
+                ]}
+              />
             )}
+            <BloggerList onLoad={(sn) => startSearch(sn)} />
           </section>
           {postPreview && (
             <PostPreview
               post={postPreview}
               downloading={postDownloading}
               onDownload={downloadPreviewPost}
+              onClose={() => setPostPreview(null)}
             />
           )}
           {userInfo.data && (

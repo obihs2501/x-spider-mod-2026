@@ -6,7 +6,7 @@ import { Item } from '../components/settings/Item';
 import { DownloadOutlined, GlobalOutlined } from '@ant-design/icons';
 import Joi from 'joi';
 import { SavePathSelector } from '../components/settings/SavePathSelector';
-import { Button, Input, Switch } from 'antd';
+import { Button, Input, Radio, Switch } from 'antd';
 import { FileNameTemplateInput } from '../components/settings/FileNameTemplateInput';
 import { showInFolder } from '../utils/shell';
 import { path } from '@tauri-apps/api';
@@ -111,6 +111,16 @@ export const Settings: React.FC = () => {
         </Item>
       </Section>
       <Section title="应用" name="app">
+        <Item label="界面风格" settingKey="theme">
+          <Radio.Group
+            options={[
+              { label: '浅色', value: 'light' },
+              { label: '深色', value: 'dark' },
+            ]}
+            optionType="button"
+            buttonStyle="solid"
+          />
+        </Item>
         <Item
           label="自动检查更新"
           settingKey="autoCheckUpdate"

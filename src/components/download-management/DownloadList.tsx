@@ -1,6 +1,6 @@
 /* eslint-disable react/prop-types */
 import { dialog } from '@tauri-apps/api';
-import { Button } from 'antd';
+import { Button, Select } from 'antd';
 import * as R from 'ramda';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { FixedSizeList } from 'react-window';
@@ -39,6 +39,7 @@ export const DownloadList: React.FC<DownloadListProps> = ({
     batchRedownloadTask: s.batchRedownloadTask,
   }));
   const [listHeight, setListHeight] = useState(600);
+  const [bloggerFilter, setBloggerFilter] = useState<string>('');
   const listRef = useRef<HTMLDivElement>(null);
 
   const updateListHeight = useCallback(() => {
@@ -61,7 +62,26 @@ export const DownloadList: React.FC<DownloadListProps> = ({
   );
 
   const tasks = useMemo(() => {
-    return filterTasks(downloadTasks);
+    const filtered = filterTasks(downloadTasks);
+    if (!bloggerFilter) return filtered;
+    return filtered.filter(
+      (t) => t.post?.user?.screenName === bloggerFilter,
+    );
+  }, [downloadTasks, filterTasks, bloggerFilter]);
+
+  // 当前分类下出现过的博主列表（用于筛选）
+  const bloggers = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const t of filterTasks(downloadTasks)) {
+      const sn = t.post?.user?.screenName;
+      if (sn && !map.has(sn)) {
+        map.set(sn, t.post?.user?.name || sn);
+      }
+    }
+    return Array.from(map.entries()).map(([sn, name]) => ({
+      value: sn,
+      label: `${name} (@${sn})`,
+    }));
   }, [downloadTasks, filterTasks]);
 
   const pauseAll = async () => {
@@ -101,8 +121,19 @@ export const DownloadList: React.FC<DownloadListProps> = ({
   return (
     <div className="flex flex-col grow h-full overflow-hidden pb-4">
       <CreationTasks />
-      <section>
+      <section className="flex items-center gap-3 flex-wrap">
         <span>共 {tasks.length} 个下载任务。</span>
+        <Select
+          allowClear
+          showSearch
+          placeholder="按博主筛选"
+          className="min-w-[220px]"
+          size="small"
+          value={bloggerFilter || undefined}
+          onChange={(v) => setBloggerFilter(v || '')}
+          options={bloggers}
+          optionFilterProp="label"
+        />
       </section>
       <ul className="flex space-x-2 mt-3">
         {batchActions?.includes('unpauseAll') && (

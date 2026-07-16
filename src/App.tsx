@@ -5,7 +5,7 @@ import { ConfigProvider, App as AntApp } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
 import React from 'react';
 import { SideBar } from './components/SideBar';
-import { ANTD_THEME } from './constants/antd-theme';
+import { getAntdTheme } from './constants/antd-theme';
 import { useBootstrap } from './hooks/useBootstrap';
 import { useRunBackgroundTasks } from './hooks/useRunBackgroundTasks';
 import { useAppStateStore } from './stores/app-state';
@@ -42,10 +42,19 @@ const AppInternal: React.FC = () => {
 
 export const App: React.FC = () => {
   const { ready, error } = useBootstrap();
+  const themeMode =
+    useSettingsStore((s) => s.app.theme) === 'dark' ? 'dark' : 'light';
+
+  React.useEffect(() => {
+    document.documentElement.classList.toggle(
+      'theme-dark',
+      themeMode === 'dark',
+    );
+  }, [themeMode]);
 
   return (
     <ConfigProvider
-      theme={ANTD_THEME}
+      theme={getAntdTheme(themeMode)}
       autoInsertSpaceInButton={false}
       locale={zhCN}
     >

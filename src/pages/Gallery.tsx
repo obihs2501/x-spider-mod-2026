@@ -1,6 +1,6 @@
 /* eslint-disable react/prop-types */
 import { fs, shell, tauri } from '@tauri-apps/api';
-import { App, Button, Empty, Image, Spin } from 'antd';
+import { App, Button, Empty, Image, Segmented, Spin } from 'antd';
 import {
   ArrowLeftOutlined,
   FolderFilled,
@@ -11,17 +11,23 @@ import {
 import React, { useCallback, useEffect, useState } from 'react';
 import { PageHeader } from '../components/PageHeader';
 import { useSettingsStore } from '../stores/settings';
+import {
+  GALLERY_PAGE_SIZE,
+  GalleryFolder,
+  useGalleryStore,
+} from '../stores/gallery';
 
 const IMAGE_EXTS = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'];
 const VIDEO_EXTS = ['mp4', 'mov', 'webm', 'mkv', 'm4v'];
-// 每次追加渲染的数量。一次性挂载几万个节点会占用数 GB 内存并卡死界面
-const PAGE_SIZE = 100;
 
-interface LocalMedia {
-  path: string;
-  name: string;
-  isVideo: boolean;
-}
+const COLUMN_OPTIONS = [3, 4, 5, 6, 8];
+const COLUMN_CLASS: Record<number, string> = {
+  3: 'grid-cols-3',
+  4: 'grid-cols-4',
+  5: 'grid-cols-5',
+  6: 'grid-cols-6',
+  8: 'grid-cols-8',
+};
 
 function classifyFile(name: string): 'image' | 'video' | null {
   const ext = name.split('.').pop()?.toLowerCase() || '';
@@ -59,13 +65,23 @@ export const Gallery: React.FC = () => {
   const { message } = App.useApp();
   const saveDirBase = useSettingsStore((s) => s.download.saveDirBase);
   const [loading, setLoading] = useState(false);
-  const [folders, setFolders] = useState<{ name: string; path: string }[]>([]);
-  const [currentFolder, setCurrentFolder] = useState<{
-    name: string;
-    path: string;
-  } | null>(null);
-  const [medias, setMedias] = useState<LocalMedia[]>([]);
-  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const {
+    folders,
+    setFolders,
+    foldersLoaded,
+    setFoldersLoaded,
+    currentFolder,
+    setCurrentFolder,
+    medias,
+    setMedias,
+    visibleCount,
+    setVisibleCount,
+    resetVisibleCount,
+    columns,
+    setColumns,
+    fitMode,
+    setFitMode,
+  } = useGalleryStore();
 
   // 顶层：只读取一层子文件夹列表（不递归，开销极小）
   const loadFolders = useCallback(async () => {
@@ -78,7 +94,7 @@ export const Gallery: React.FC = () => {
       }
       const entries = await fs.readDir(saveDirBase);
       // 非递归 readDir 无法直接区分目录，对非媒体文件名的条目试探 readDir
-      const result: { name: string; path: string }[] = [];
+      const result: GalleryFolder[] = [];
       for (const e of entries) {
         if (!e.name || classifyFile(e.name)) continue;
         try {
@@ -90,24 +106,29 @@ export const Gallery: React.FC = () => {
       }
       result.sort((a, b) => a.name.localeCompare(b.name));
       setFolders(result);
+      setFoldersLoaded(true);
     } catch (err: any) {
       log.error(err);
       message.error(`读取目录失败：${err?.message || err}`);
     } finally {
       setLoading(false);
     }
-  }, [saveDirBase, message]);
+  }, [saveDirBase, message, setFolders, setFoldersLoaded]);
 
   // 进入某个子文件夹：只扫描该文件夹（递归其内部）
   const openFolder = useCallback(
-    async (folder: { name: string; path: string }) => {
+    async (folder: GalleryFolder) => {
       setLoading(true);
       setCurrentFolder(folder);
       setMedias([]);
-      setVisibleCount(PAGE_SIZE);
+      resetVisibleCount();
       try {
         const entries = await fs.readDir(folder.path, { recursive: true });
-        const list: LocalMedia[] = [];
+        const list: {
+          path: string;
+          name: string;
+          isVideo: boolean;
+        }[] = [];
         const walk = (items: fs.FileEntry[]) => {
           for (const e of items) {
             if (e.children) {
@@ -134,12 +155,15 @@ export const Gallery: React.FC = () => {
         setLoading(false);
       }
     },
-    [message],
+    [message, setCurrentFolder, setMedias, resetVisibleCount],
   );
 
+  // 只在首次进入（或保存路径变化后）时扫描，之后使用缓存
   useEffect(() => {
-    loadFolders();
-  }, [loadFolders]);
+    if (!foldersLoaded) {
+      loadFolders();
+    }
+  }, [foldersLoaded, loadFolders]);
 
   const visibleMedias = medias.slice(0, visibleCount);
 
@@ -159,12 +183,20 @@ export const Gallery: React.FC = () => {
             >
               返回
             </Button>
-            <h2 className="font-bold text-lg truncate max-w-[40%]">
+            <h2 className="font-bold text-lg truncate max-w-[30%]">
               {currentFolder.name}
             </h2>
             <span className="text-gray-400 text-sm">
               共 {medias.length} 个文件
             </span>
+            <Button
+              icon={<ReloadOutlined />}
+              size="small"
+              loading={loading}
+              onClick={() => openFolder(currentFolder)}
+            >
+              重新扫描
+            </Button>
             <Button
               icon={<FolderOpenOutlined />}
               size="small"
@@ -172,6 +204,24 @@ export const Gallery: React.FC = () => {
             >
               打开目录
             </Button>
+            <span className="ml-auto flex items-center gap-2 text-sm">
+              <span className="text-gray-400">每行</span>
+              <Segmented
+                size="small"
+                value={columns}
+                onChange={(v) => setColumns(v as number)}
+                options={COLUMN_OPTIONS}
+              />
+              <Segmented
+                size="small"
+                value={fitMode}
+                onChange={(v) => setFitMode(v as 'cover' | 'contain')}
+                options={[
+                  { label: '裁剪填充', value: 'cover' },
+                  { label: '完整显示', value: 'contain' },
+                ]}
+              />
+            </span>
           </>
         ) : (
           <>
@@ -240,7 +290,9 @@ export const Gallery: React.FC = () => {
           ) : (
             <>
               <Image.PreviewGroup>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
+                <div
+                  className={`grid ${COLUMN_CLASS[columns] || 'grid-cols-5'} gap-2`}
+                >
                   {visibleMedias.map((m) => {
                     const src = tauri.convertFileSrc(m.path);
                     return (
@@ -258,7 +310,7 @@ export const Gallery: React.FC = () => {
                             loading="lazy"
                             width="100%"
                             height="100%"
-                            style={{ objectFit: 'cover', height: '100%' }}
+                            style={{ objectFit: fitMode, height: '100%' }}
                           />
                         )}
                         <span className="absolute left-1 bottom-1 right-1 truncate bg-black/60 text-white text-[10px] px-1 rounded pointer-events-none">
@@ -272,10 +324,11 @@ export const Gallery: React.FC = () => {
               {visibleCount < medias.length && (
                 <div className="flex justify-center mt-4">
                   <Button
-                    onClick={() => setVisibleCount((c) => c + PAGE_SIZE)}
+                    onClick={() =>
+                      setVisibleCount((c) => c + GALLERY_PAGE_SIZE)
+                    }
                   >
-                    加载更多（已显示 {visibleMedias.length} /{' '}
-                    {medias.length}）
+                    加载更多（已显示 {visibleMedias.length} / {medias.length}）
                   </Button>
                 </div>
               )}

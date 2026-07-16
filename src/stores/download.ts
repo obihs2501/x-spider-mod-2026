@@ -2,6 +2,9 @@ import { fs, notification, path } from '@tauri-apps/api';
 import { nanoid } from 'nanoid';
 import * as R from 'ramda';
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
+import { createTauriFileStorage } from './persist/tauri-file-storage';
+import { useBloggerStore } from './bloggers';
 import { CreationTask } from '../interfaces/CreationTask';
 import { DownloadFilter } from '../interfaces/DownloadFilter';
 import { DownloadTask } from '../interfaces/DownloadTask';
@@ -127,7 +130,9 @@ export interface DownloadStore {
   updateCreationTask: (task: CreationTask) => void;
 }
 
-export const useDownloadStore = create<DownloadStore>((set, get) => ({
+export const useDownloadStore = create<DownloadStore>()(
+  persist(
+    (set, get) => ({
   currentTab: '',
   setCurrentTab: (tab) => set({ currentTab: tab }),
 
@@ -353,9 +358,11 @@ export const useDownloadStore = create<DownloadStore>((set, get) => ({
     }
   },
 
-  creationTasks: [],
-  createCreationTask: (user, filter) => {
-    const id = nanoid();
+      creationTasks: [],
+      createCreationTask: (user, filter) => {
+        // 记录到已下载博主列表，供增量下载使用
+        useBloggerStore.getState().recordDownload(user);
+        const id = nanoid();
     const abortController = new AbortController();
     creationTaskAbortControllerMap.set(id, abortController);
     set({
@@ -383,15 +390,44 @@ export const useDownloadStore = create<DownloadStore>((set, get) => ({
       creationTasks: get().creationTasks.filter((v) => v.id !== id),
     });
   },
-  updateCreationTask: (task) => {
-    set({
-      creationTasks: get().creationTasks.map((oldTask) => {
-        if (oldTask.id === task.id) return task;
-        return oldTask;
-      }),
-    });
-  },
-}));
+      updateCreationTask: (task) => {
+        set({
+          creationTasks: get().creationTasks.map((oldTask) => {
+            if (oldTask.id === task.id) return task;
+            return oldTask;
+          }),
+        });
+      },
+    }),
+    {
+      name: 'download-tasks',
+      storage: createTauriFileStorage(),
+      version: 1,
+      // 只持久化下载任务记录，运行时状态不落盘
+      partialize: (s) => ({ downloadTasks: s.downloadTasks }) as any,
+      merge: (persisted: any, current) => {
+        const revived: DownloadTask[] = (persisted?.downloadTasks || []).map(
+          (t: any): DownloadTask => ({
+            ...t,
+            // 重启后 aria2 会话已丢失，未完成任务标记为错误以便重下
+            status: [AriaStatus.Complete, AriaStatus.Error].includes(t.status)
+              ? t.status
+              : AriaStatus.Error,
+            error:
+              t.status === AriaStatus.Complete
+                ? t.error
+                : t.error || '应用重启，任务已中断，可重新下载',
+            post: {
+              ...t.post,
+              createdAt: t.post?.createdAt ? dayjs(t.post.createdAt) : undefined,
+            },
+          }),
+        );
+        return { ...current, downloadTasks: revived };
+      },
+    },
+  ),
+);
 
 async function runCreationTask(task: CreationTask, abortSignal: AbortSignal) {
   log().info('Run creation task', task);

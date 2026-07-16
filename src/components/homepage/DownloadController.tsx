@@ -48,8 +48,13 @@ export const DownloadController: React.FC = () => {
           setFilter(values);
         }}
       >
-        <Form.Item name="dateRange" label="日期范围">
+        <Form.Item
+          name="dateRange"
+          label="日期范围"
+          tooltip="可只选开始日期（结束留空表示至今）"
+        >
           <DatePicker.RangePicker
+            allowEmpty={[false, true]}
             presets={[
               {
                 label: '至今',

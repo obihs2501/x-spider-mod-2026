@@ -31,6 +31,7 @@ export interface Settings_V2 {
     autoCheckUpdate: boolean;
     acceptPrerelease: boolean;
     writeLogs: boolean;
+    theme?: 'light' | 'dark';
   };
 }
 
