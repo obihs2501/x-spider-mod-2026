@@ -15,8 +15,38 @@ import { request } from '../ipc/network';
 import { useAppStateStore } from '../stores/app-state';
 import { parseCookie } from '../utils/cookie';
 import MediaType from '../enums/MediaType';
+import { getGuestToken, PUBLIC_BEARER } from './guest';
 
 const HOST = 'x.com';
+
+/**
+ * 构建带鉴权的通用请求头。
+ *
+ * - 若用户已配置 Cookie，则使用登录态（可访问受保护/敏感内容）。
+ * - 若未配置 Cookie，则自动激活并使用「游客令牌」，无需登录即可获取公开账号的原画质媒体。
+ */
+async function getAuthedHeaders(): Promise<Record<string, string>> {
+  const cookies = useAppStateStore.getState().cookieString?.trim();
+
+  if (cookies) {
+    return {
+      'User-Agent': navigator.userAgent,
+      Referer: `https://${HOST}`,
+      Authorization: PUBLIC_BEARER,
+      Cookie: cookies,
+      'X-Csrf-Token': parseCookie(cookies)['ct0'],
+    };
+  }
+
+  // 无 Cookie：走游客令牌
+  const guestToken = await getGuestToken();
+  return {
+    'User-Agent': navigator.userAgent,
+    Referer: `https://${HOST}`,
+    Authorization: PUBLIC_BEARER,
+    'X-Guest-Token': guestToken,
+  };
+}
 
 function getCommonHeaders(withCredentials = true): Record<string, string> {
   const cookies = useAppStateStore.getState().cookieString;
@@ -25,8 +55,7 @@ function getCommonHeaders(withCredentials = true): Record<string, string> {
     Referer: `https://${HOST}`,
     ...(withCredentials
       ? {
-          Authorization:
-            'Bearer AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA',
+          Authorization: PUBLIC_BEARER,
           Cookie: cookies,
           'X-Csrf-Token': parseCookie(cookies)['ct0'],
         }
@@ -92,7 +121,7 @@ export async function getUser(screenName: string): Promise<TwitterUser> {
         withSafetyModeUserFields: true,
       }),
     },
-    headers: getCommonHeaders(),
+    headers: await getAuthedHeaders(),
   });
   ensureResponse(resp);
 
@@ -262,7 +291,7 @@ export async function getUserMedias(
         withV2Timeline: true,
       }),
     },
-    headers: getCommonHeaders(),
+    headers: await getAuthedHeaders(),
   });
   ensureResponse(resp);
 
@@ -398,7 +427,7 @@ export async function getUserTweets(
         withV2Timeline: true,
       }),
     },
-    headers: getCommonHeaders(),
+    headers: await getAuthedHeaders(),
   });
   ensureResponse(resp);
 
