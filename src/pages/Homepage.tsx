@@ -209,39 +209,40 @@ export const Homepage: React.FC = () => {
                   aria-label="用户信息"
                   className="bg-white border-[1px] border-gray-300 rounded-md mt-4"
                 >
-                <span className="sr-only" role="status">
-                  用户信息加载完成，当前搜索用户：
-                  {userInfo.data.name || '未知用户'}
-                </span>
-                <a
-                  title="跳转到主页"
-                  className="flex items-center p-4 focus:outline !outline-4 !outline-cyan-200"
-                  href={
-                    userInfo.data.screenName
-                      ? buildUserUrl(userInfo.data.screenName)
-                      : 'javascript:void(0);'
-                  }
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  <div>
-                    <Avatar src={userInfo.data.avatar} size={50} alt="头像" />
-                  </div>
-                  <div className="ml-2">
-                    <p>
-                      {userInfo.data.name || '未知用户'}
-                      <span className="text-gray-400">
-                        （共 {userInfo.data.mediaCount || 0} 个媒体）
-                      </span>
-                    </p>
-                    {userInfo.data.screenName ? (
-                      <p className="text-ant-color-text-secondary text-sm mt-1">
-                        @{userInfo.data.screenName}
+                  <span className="sr-only" role="status">
+                    用户信息加载完成，当前搜索用户：
+                    {userInfo.data.name || '未知用户'}
+                  </span>
+                  <a
+                    title="跳转到主页"
+                    className="flex items-center p-4 focus:outline !outline-4 !outline-cyan-200"
+                    href={
+                      userInfo.data.screenName
+                        ? buildUserUrl(userInfo.data.screenName)
+                        : 'javascript:void(0);'
+                    }
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <div>
+                      <Avatar src={userInfo.data.avatar} size={50} alt="头像" />
+                    </div>
+                    <div className="ml-2">
+                      <p>
+                        {userInfo.data.name || '未知用户'}
+                        <span className="text-gray-400">
+                          （共 {userInfo.data.mediaCount || 0} 个媒体）
+                        </span>
                       </p>
-                    ) : undefined}
-                  </div>
-                </a>
-              </section>
+                      {userInfo.data.screenName ? (
+                        <p className="text-ant-color-text-secondary text-sm mt-1">
+                          @{userInfo.data.screenName}
+                        </p>
+                      ) : undefined}
+                    </div>
+                  </a>
+                </section>
+              )}
             </>
           )}
         </div>
