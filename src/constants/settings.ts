@@ -8,7 +8,7 @@ export const DEFAULT_SETTINGS: Settings = {
   },
   download: {
     saveDirBase: '',
-    dirTemplate: '',
+    dirTemplate: '%USER_NAME% (@%USER_SCREEN_NAME%)',
     fileNameTemplate:
       '%POST_TIME% %USER_SCREEN_NAME% %POST_ID%-%MEDIA_INDEX%%EXT%',
     sameFileSkip: true,

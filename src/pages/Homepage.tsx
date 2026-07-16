@@ -10,7 +10,6 @@ import { useHomepageStore } from '../stores/homepage';
 import { useDownloadStore } from '../stores/download';
 import { buildUserUrl, parsePostUrl } from '../twitter/url';
 import { getTweetDetail } from '../twitter/api';
-import { TwitterPost } from '../interfaces/TwitterPost';
 
 export const Homepage: React.FC = () => {
   const { message } = App.useApp();
@@ -21,6 +20,8 @@ export const Homepage: React.FC = () => {
     clearUser,
     loadUser,
     clearPostList: clearMediaList,
+    postPreview,
+    setPostPreview,
   } = useHomepageStore();
   const { searchHistory, addSearchHistory, clearSearchHistory, cookieString } =
     useAppStateStore((s) => ({
@@ -33,7 +34,6 @@ export const Homepage: React.FC = () => {
   const { batchCreateDownloadTask } = useDownloadStore((s) => ({
     batchCreateDownloadTask: s.batchCreateDownloadTask,
   }));
-  const [postPreview, setPostPreview] = useState<TwitterPost | null>(null);
   const [postDownloading, setPostDownloading] = useState(false);
 
   // 解析单条帖子并展示预览（不自动下载）

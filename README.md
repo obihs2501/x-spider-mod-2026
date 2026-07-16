@@ -12,7 +12,7 @@ AI辅助开发旨在快速响应需求，可能在部分细节上与纯人工开
 
 ---
 
-<h1 align="center">X-Spider-二黑修改版</h1>
+<h1 align="center">X-Spider</h1>
 
 一个推特媒体（图片、视频）下载器。
 

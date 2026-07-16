@@ -23,6 +23,10 @@ export interface HomepageStore {
   filter: DownloadFilter;
   setFilter: (filter: DownloadFilter) => void;
 
+  // 单条帖子解析预览（跨页面保留）
+  postPreview: TwitterPost | null;
+  setPostPreview: (post: TwitterPost | null) => void;
+
   userInfo: UserInfoRequest;
   loadUser: (screenName: string) => Promise<void>;
   clearUser: () => void;
@@ -44,6 +48,9 @@ export const useHomepageStore = create<HomepageStore>((set, get) => ({
     source: 'medias',
   },
   setFilter: (filter) => set({ filter }),
+
+  postPreview: null,
+  setPostPreview: (post) => set({ postPreview: post }),
 
   userInfo: {
     loading: false,

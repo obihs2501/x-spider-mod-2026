@@ -46,7 +46,9 @@ export const Settings: React.FC = () => {
           }}
           label="文件夹模板"
           settingKey="dirTemplate"
-          description="为空时下载的文件直接保存在上方的“保存路径”里面"
+          description={
+            '下载文件保存在「保存路径/文件夹模板」下，支持变量。例如 %USER_NAME% (@%USER_SCREEN_NAME%) 会生成形如「久遠美緒💍新人△▼女優 (@kuon_lifepro)」的文件夹；留空时默认也按此格式分类'
+          }
         >
           <FileNameTemplateInput />
         </Item>

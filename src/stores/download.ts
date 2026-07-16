@@ -48,9 +48,6 @@ async function mergeAriaStatusToDownloadTask(
   };
 }
 
-// ==============================================
-// 【已修改：自动按博主用户名分类】
-// ==============================================
 async function prepareDownloadTask({
   post,
   media,
@@ -59,21 +56,19 @@ async function prepareDownloadTask({
   const downloadUrl = getDownloadUrl(media);
   log().info('downloadUrl', downloadUrl);
 
-  // ==============================================
-  // 核心修改：自动获取博主用户名并创建文件夹
-  // ==============================================
-  const bloggerName = post.user.screenName;
-  const safeBloggerName = bloggerName.replace(/[\\/*?:"<>|]/g, '_');
-
   const templateData: FileNameTemplateData = {
     media,
     post,
   };
 
-  // 强制路径：下载目录 / 博主用户名
-  const dir = await path.join(settings.download.saveDirBase, safeBloggerName);
-  
-  log().info('resolved dirName', safeBloggerName);
+  // 按「文件夹模板」设置解析子目录；为空时默认按 昵称 (@用户名) 分类
+  const dirTemplate =
+    settings.download.dirTemplate?.trim() ||
+    '%USER_NAME% (@%USER_SCREEN_NAME%)';
+  const dirName = resolveVariables(dirTemplate, templateData);
+  const dir = await path.join(settings.download.saveDirBase, dirName);
+
+  log().info('resolved dirName', dirName);
   log().info('resolved dir', dir);
 
   const fileName = resolveVariables(
