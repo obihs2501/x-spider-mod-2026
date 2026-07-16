@@ -26,7 +26,8 @@ class Aria2 {
     return this.#ready;
   }
   #secret = crypto.randomUUID();
-  #port = 6801;
+  // 随机端口，避免与旧版本实例或残留的 aria2c 孤儿进程冲突
+  #port = 16800 + Math.floor(Math.random() * 20000);
   #ws?: WebSocket;
   #command?: Command;
   #child?: Child;
@@ -69,24 +70,47 @@ class Aria2 {
     this.#child = await this.#command.spawn();
     this.#log?.info('Wait for listening...');
     await new Promise((resolve, reject) => {
+      let stdoutBuf = '';
+      const cleanup = () => {
+        clearTimeout(timer);
+        this.#command!.stdout.removeListener('data', onStdout);
+        this.#command!.stderr.removeListener('data', onStderr);
+        this.#command!.removeListener('close', onClose);
+        this.#command!.removeListener('error', onClose);
+      };
+      // aria2c 启动失败（如端口被占用）会直接退出，必须监听退出事件，
+      // 否则会永远卡在启动界面
+      const onClose = () => {
+        cleanup();
+        reject(
+          new Error(
+            `Aria2 意外退出（端口 ${this.#port}）：${stdoutBuf.slice(-300) || '无输出'}`,
+          ),
+        );
+      };
+      const timer = setTimeout(() => {
+        cleanup();
+        reject(new Error('Aria2 启动超时（15 秒）'));
+      }, 15000);
       const onStdout = (message: string) => {
+        stdoutBuf += message;
         if (
           !this.ready &&
           message.includes('IPv4 RPC: listening on TCP port')
         ) {
           this.#log?.info('Child process launched');
-          this.#command!.stdout.removeListener('data', onStdout);
-          this.#command!.stdout.removeListener('data', onStderr);
+          cleanup();
           resolve(null);
         }
       };
       const onStderr = (message: string) => {
-        this.#command!.stdout.removeListener('data', onStdout);
-        this.#command!.stdout.removeListener('data', onStderr);
+        cleanup();
         reject(new Error(message));
       };
       this.#command!.stdout.on('data', onStdout);
       this.#command!.stderr.on('data', onStderr);
+      this.#command!.on('close', onClose);
+      this.#command!.on('error', onClose);
     });
 
     /**
