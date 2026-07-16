@@ -1,5 +1,5 @@
 /* eslint-disable react/prop-types */
-import { fs, path, shell, tauri } from '@tauri-apps/api';
+import { fs, shell, tauri } from '@tauri-apps/api';
 import { App, Button, Empty, Image, Spin } from 'antd';
 import { FolderOpenOutlined, ReloadOutlined } from '@ant-design/icons';
 import React, { useCallback, useEffect, useState } from 'react';
