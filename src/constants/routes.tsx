@@ -5,12 +5,16 @@ import {
   DownloadOutlined,
   InfoCircleFilled,
   PictureFilled,
+  UnorderedListOutlined,
+  TeamOutlined,
 } from '@ant-design/icons';
 import { Homepage } from '../pages/Homepage';
 import { DownloadManagement } from '../pages/DownloadManagement';
+import { BloggerManagement } from '../pages/BloggerManagement';
 import { Gallery } from '../pages/Gallery';
 import { Settings } from '../pages/Settings';
 import { About } from '../pages/About';
+import { BatchDownload } from '../pages/BatchDownload';
 
 export const ROUTES: Route[] = [
   {
@@ -18,6 +22,18 @@ export const ROUTES: Route[] = [
     name: '主页',
     icon: <HomeFilled />,
     element: <Homepage />,
+  },
+  {
+    id: 'batch-download',
+    name: '批量下载',
+    icon: <UnorderedListOutlined />,
+    element: <BatchDownload />,
+  },
+  {
+    id: 'blogger-management',
+    name: '博主管理',
+    icon: <TeamOutlined />,
+    element: <BloggerManagement />,
   },
   {
     id: 'download-management',

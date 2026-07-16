@@ -5,6 +5,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { createTauriFileStorage } from './persist/tauri-file-storage';
 import { useBloggerStore } from './bloggers';
+import { useLocalIndexStore } from './local-index';
 import { CreationTask } from '../interfaces/CreationTask';
 import { DownloadFilter } from '../interfaces/DownloadFilter';
 import { DownloadTask } from '../interfaces/DownloadTask';
@@ -491,8 +492,15 @@ async function runCreationTask(task: CreationTask, abortSignal: AbortSignal) {
     }
 
     const paramsList: CreateDownloadTaskParams[] = [];
+    const localIndex = useLocalIndexStore.getState();
 
     for (const post of filteredPosts) {
+      // 本地索引中已有该帖（文件名含帖子 ID），直接跳过
+      if (settings.download.sameFileSkip && localIndex.hasPost(post.id)) {
+        skipCount += post.medias?.length || 0;
+        log().info('Skip because local index has post', post.id);
+        continue;
+      }
       const filteredMedias = post.medias!.filter(
         R.allPass([
           (media) => {
@@ -532,6 +540,10 @@ async function runCreationTask(task: CreationTask, abortSignal: AbortSignal) {
     }
 
     await batchCreateDownloadTask(paramsList);
+    // 记录到本地索引，供之后增量/重复下载时快速跳过
+    localIndex.addPosts(
+      paramsList.map((p) => p.post.id).filter((id): id is string => !!id),
+    );
     completeCount += paramsList.length;
     updateCreationTask({
       ...task,

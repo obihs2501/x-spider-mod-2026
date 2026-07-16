@@ -5,7 +5,6 @@ import { PageHeader } from '../components/PageHeader';
 import { PostListGridView } from '../components/homepage/PostListGridView';
 import { DownloadController } from '../components/homepage/DownloadController';
 import { PostPreview } from '../components/homepage/PostPreview';
-import { BloggerList } from '../components/homepage/BloggerList';
 import { useAppStateStore } from '../stores/app-state';
 import { useHomepageStore } from '../stores/homepage';
 import { useDownloadStore } from '../stores/download';
@@ -193,7 +192,6 @@ export const Homepage: React.FC = () => {
                 ]}
               />
             )}
-            <BloggerList onLoad={(sn) => startSearch(sn)} />
           </section>
           {postPreview && (
             <PostPreview

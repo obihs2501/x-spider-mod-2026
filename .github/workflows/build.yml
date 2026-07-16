@@ -56,6 +56,12 @@ jobs:
           Copy-Item $exe.FullName 'src-tauri/binaries/aria2c-x86_64-pc-windows-msvc.exe'
       - name: Type check
         run: pnpm run typeCheck
+      - name: Clean stale bundles
+        shell: pwsh
+        run: |
+          if (Test-Path src-tauri/target/release/bundle) {
+            Remove-Item -Recurse -Force src-tauri/target/release/bundle
+          }
       - name: Build
         run: pnpm tauri build
       - name: Upload installer
