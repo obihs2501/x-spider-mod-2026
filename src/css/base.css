@@ -2,3 +2,29 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Claude 风格全局基调：奶油纸底、暖墨文字 */
+body {
+  background-color: #faf9f5;
+  color: #3d3929;
+}
+
+::selection {
+  background-color: rgba(201, 100, 66, 0.25);
+}
+
+/* 柔和的滚动条 */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background-color: #d8d5c9;
+  border-radius: 5px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: #c9c5b6;
+}
+::-webkit-scrollbar-track {
+  background-color: transparent;
+}
+

@@ -71,7 +71,7 @@ export const Account: React.FC = () => {
       <div className="px-4">
         <section
           aria-label="个人信息"
-          className="flex flex-col justify-center items-center border-b-[1px] py-6 border-[rgba(255,255,255,0.5)]"
+          className="flex flex-col justify-center items-center border-b-[1px] py-6 border-[#E8E6DC]"
         >
           {!accountInfo && (
             <>
@@ -105,7 +105,7 @@ export const Account: React.FC = () => {
               >
                 <Avatar size={50} src={accountInfo.avatar} alt="头像" />
               </a>
-              <div className="text-white mt-1 font-bold">
+              <div className="text-[#3D3929] mt-1 font-bold">
                 {accountInfo.screenName}
               </div>
               <div>
@@ -113,7 +113,7 @@ export const Account: React.FC = () => {
                   onClick={() => {
                     setCookieString('');
                   }}
-                  className="text-white bg-transparent hover:text-gray-200 transition-colors text-sm"
+                  className="text-[#87867F] bg-transparent hover:text-ant-color-primary transition-colors text-sm"
                 >
                   <LogoutOutlined aria-hidden />
                   <span className="ml-1">登出</span>

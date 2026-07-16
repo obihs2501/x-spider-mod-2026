@@ -27,7 +27,7 @@ const AppInternal: React.FC = () => {
   useRunBackgroundTasks();
 
   return (
-    <div className="bg-gray-50 w-full h-full overflow-auto">
+    <div className="bg-[#FAF9F5] w-full h-full overflow-auto">
       <SideBar />
       <main
         className="w-full overflow-auto transition-all pl-52"
