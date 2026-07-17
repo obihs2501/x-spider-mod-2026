@@ -83,8 +83,8 @@
         "fullscreen": false,
         "resizable": true,
         "title": "X-Spider",
-        "width": 1280,
-        "height": 920,
+        "width": 1100,
+        "height": 760,
         "minWidth": 800,
         "minHeight": 600,
         "decorations": true

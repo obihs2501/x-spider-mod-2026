@@ -41,10 +41,18 @@ function extractFileDate(fileName: string): number | null {
   return Number.isNaN(ts) ? null : ts;
 }
 
+export interface BloggerLocalStats {
+  directoryPath: string;
+  mediaCount: number;
+  postCount: number;
+  latestFileAt: number;
+}
+
 export interface LocalIndexStore {
   /** 已识别为「本地已存在」的推文 ID 集合（数组形式持久化） */
   postIds: string[];
   lastScanAt: number;
+  bloggerStats: Record<string, BloggerLocalStats>;
   hasPost: (id?: string) => boolean;
   addPosts: (ids: string[]) => void;
   /** 扫描本地保存目录：导入帖子 ID 索引，并按「昵称 (@用户名)」文件夹识别博主 */
@@ -61,6 +69,7 @@ export const useLocalIndexStore = create<LocalIndexStore>()(
     (set, get) => ({
       postIds: [],
       lastScanAt: 0,
+      bloggerStats: {},
       hasPost: (id) => {
         if (!id) return false;
         return get().postIds.includes(id);
@@ -76,6 +85,8 @@ export const useLocalIndexStore = create<LocalIndexStore>()(
           return { total: 0, added: 0, bloggers: 0 };
         }
         const found = new Set<string>();
+        const bloggerPostIds = new Map<string, Set<string>>();
+        const bloggerStats = new Map<string, BloggerLocalStats>();
         // 每个博主文件夹内文件的最新日期，用于设定增量起点
         const bloggerDates = new Map<
           string,
@@ -101,6 +112,20 @@ export const useLocalIndexStore = create<LocalIndexStore>()(
             if (id) found.add(id);
             if (blogger) {
               const date = extractFileDate(name) || 0;
+              const currentStats = bloggerStats.get(blogger.screenName);
+              bloggerStats.set(blogger.screenName, {
+                directoryPath:
+                  currentStats?.directoryPath ||
+                  e.path.slice(0, Math.max(0, e.path.length - name.length - 1)),
+                mediaCount: (currentStats?.mediaCount || 0) + 1,
+                postCount: 0,
+                latestFileAt: Math.max(currentStats?.latestFileAt || 0, date),
+              });
+              if (id) {
+                const ids = bloggerPostIds.get(blogger.screenName) || new Set();
+                ids.add(id);
+                bloggerPostIds.set(blogger.screenName, ids);
+              }
               const prev = bloggerDates.get(blogger.screenName);
               if (!prev || date > prev.latest) {
                 bloggerDates.set(blogger.screenName, {
@@ -122,7 +147,14 @@ export const useLocalIndexStore = create<LocalIndexStore>()(
             added++;
           }
         });
-        set({ postIds: Array.from(before), lastScanAt: Date.now() });
+        bloggerStats.forEach((stats, screenName) => {
+          stats.postCount = bloggerPostIds.get(screenName)?.size || 0;
+        });
+        set({
+          postIds: Array.from(before),
+          lastScanAt: Date.now(),
+          bloggerStats: Object.fromEntries(bloggerStats),
+        });
 
         // 把识别到的博主并入博主列表（已存在的不覆盖更新时间）
         const bloggerStore = useBloggerStore.getState();
@@ -149,7 +181,7 @@ export const useLocalIndexStore = create<LocalIndexStore>()(
 
         return { total: found.size, added, bloggers: newBloggers };
       },
-      clear: () => set({ postIds: [], lastScanAt: 0 }),
+      clear: () => set({ postIds: [], lastScanAt: 0, bloggerStats: {} }),
     }),
     {
       name: 'local-index',

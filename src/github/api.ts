@@ -1,8 +1,11 @@
 import { request } from '../ipc/network';
 import * as R from 'ramda';
 
+const RELEASES_API =
+  'https://api.github.com/repos/obihs2501/x-spider-mod-2026/releases';
+
 export async function getLatestReleases(pre = false) {
-let url = 'https://api.github.com/repos/hureyqi/x-spider-mod-2026/releases';
+  let url = RELEASES_API;
   // eslint-disable-next-line no-constant-condition
   while (true) {
     const resp = await request({

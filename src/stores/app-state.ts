@@ -55,7 +55,18 @@ export const useAppStateStore = create(
     {
       name: 'app-state',
       storage: createTauriFileStorage(),
-      version: 1,
+      version: 2,
+      migrate: (persisted: any) => {
+        if (persisted?.latestUrl?.includes('hureyqi/x-spider-mod-2026')) {
+          return {
+            ...persisted,
+            latestVersion: PACKAGE_JSON_VERSION,
+            latestUrl: '',
+            lastCheckUpdateTime: 0,
+          };
+        }
+        return persisted;
+      },
     },
   ),
 );

@@ -1,9 +1,9 @@
 /* eslint-disable react/prop-types */
 import { LoadingOutlined } from '@ant-design/icons';
-import { App } from 'antd';
+import { App, Image } from 'antd';
 import dayjs from 'dayjs';
 import * as R from 'ramda';
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import MediaType from '../../enums/MediaType';
 import { TwitterMedia } from '../../interfaces/TwitterMedia';
 import { TwitterPost } from '../../interfaces/TwitterPost';
@@ -12,9 +12,16 @@ import { useHomepageStore } from '../../stores/homepage';
 import { buildPostUrl } from '../../twitter/url';
 import { InfiniteScroll } from '../InfiniteScroll';
 import { GridViewItemAction, GridViewItemActions } from './GridViewItemActions';
+import { VideoPreviewModal } from '../media/VideoPreviewModal';
+import { getDownloadUrl } from '../../twitter/utils';
 
 export const PostListGridView: React.FC = () => {
   const { message } = App.useApp();
+  const [imagePreview, setImagePreview] = useState<string>();
+  const [videoPreview, setVideoPreview] = useState<{
+    src: string;
+    title: string;
+  } | null>(null);
   const { userInfo, postList } = useHomepageStore((state) => ({
     postList: state.postList,
     userInfo: state.userInfo,
@@ -108,6 +115,18 @@ export const PostListGridView: React.FC = () => {
             }
           }
 
+          const actionPreview: GridViewItemAction = {
+            name: media.type === MediaType.Photo ? '预览图片' : '预览视频',
+            onClick: () => {
+              if (media.type === MediaType.Photo) {
+                setImagePreview(`${media.url}?format=jpg&name=orig`);
+                return;
+              }
+              const src = getDownloadUrl(media);
+              setVideoPreview({ src, title: media.id || '视频预览' });
+            },
+          };
+
           const actionDownloadImage: GridViewItemAction = {
             name: '下载图片',
             onClick: commonDownload,
@@ -154,15 +173,27 @@ export const PostListGridView: React.FC = () => {
                     actions={R.cond([
                       [
                         R.equals(MediaType.Photo),
-                        R.always([actionOpen, actionDownloadImage]),
+                        R.always([
+                          actionPreview,
+                          actionOpen,
+                          actionDownloadImage,
+                        ]),
                       ],
                       [
                         R.equals(MediaType.Video),
-                        R.always([actionOpen, actionDownloadVideo]),
+                        R.always([
+                          actionPreview,
+                          actionOpen,
+                          actionDownloadVideo,
+                        ]),
                       ],
                       [
                         R.equals(MediaType.Gif),
-                        R.always([actionOpen, actionDownloadGif]),
+                        R.always([
+                          actionPreview,
+                          actionOpen,
+                          actionDownloadGif,
+                        ]),
                       ],
                       [R.T, R.always([])],
                     ])(media.type).filter(R.isNotNil)}
@@ -193,6 +224,23 @@ export const PostListGridView: React.FC = () => {
           列表没有更多数据了
         </div>
       )}
+      <Image
+        className="hidden"
+        src={imagePreview}
+        preview={{
+          visible: !!imagePreview,
+          src: imagePreview,
+          onVisibleChange: (visible) => {
+            if (!visible) setImagePreview(undefined);
+          },
+        }}
+      />
+      <VideoPreviewModal
+        open={!!videoPreview}
+        src={videoPreview?.src}
+        title={videoPreview?.title}
+        onClose={() => setVideoPreview(null)}
+      />
     </InfiniteScroll>
   );
 };

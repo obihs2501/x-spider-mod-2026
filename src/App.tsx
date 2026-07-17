@@ -11,6 +11,7 @@ import { useRunBackgroundTasks } from './hooks/useRunBackgroundTasks';
 import { useAppStateStore } from './stores/app-state';
 import { useRouteStore } from './stores/route';
 import { useSettingsStore } from './stores/settings';
+import { useWindowState } from './hooks/useWindowState';
 
 const AppInternal: React.FC = () => {
   const currentRoute = useRouteStore((state) => state.route);
@@ -41,6 +42,7 @@ const AppInternal: React.FC = () => {
 };
 
 export const App: React.FC = () => {
+  useWindowState();
   const { ready, error } = useBootstrap();
   const themeMode =
     useSettingsStore((s) => s.app.theme) === 'dark' ? 'dark' : 'light';

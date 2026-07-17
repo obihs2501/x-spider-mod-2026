@@ -7,6 +7,7 @@ export const TabComplete: React.FC = () => {
     <DownloadList
       batchActions={['deleteAll']}
       filter={(t) => ['complete'].includes(t.status)}
+      sort={(a, b) => b.updatedAt - a.updatedAt}
     />
   );
 };

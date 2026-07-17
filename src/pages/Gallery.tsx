@@ -1,5 +1,6 @@
 /* eslint-disable react/prop-types */
 import { fs, shell, tauri } from '@tauri-apps/api';
+import { invoke } from '@tauri-apps/api/tauri';
 import { App, Button, Empty, Image, Segmented, Spin } from 'antd';
 import {
   ArrowLeftOutlined,
@@ -7,6 +8,8 @@ import {
   FolderOpenOutlined,
   PlayCircleFilled,
   ReloadOutlined,
+  UnorderedListOutlined,
+  AppstoreOutlined,
 } from '@ant-design/icons';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { PageHeader } from '../components/PageHeader';
@@ -16,6 +19,7 @@ import {
   GalleryFolder,
   useGalleryStore,
 } from '../stores/gallery';
+import { VideoPreviewModal } from '../components/media/VideoPreviewModal';
 
 const IMAGE_EXTS = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'];
 const VIDEO_EXTS = ['mp4', 'mov', 'webm', 'mkv', 'm4v'];
@@ -36,35 +40,29 @@ function classifyFile(name: string): 'image' | 'video' | null {
   return null;
 }
 
-/** 视频占位块，点击后才真正挂载 <video>，避免批量加载吃内存 */
-const VideoTile: React.FC<{ src: string; name: string }> = ({ src, name }) => {
-  const [active, setActive] = useState(false);
-  if (active) {
-    return (
-      <video
-        src={src}
-        controls
-        autoPlay
-        className="w-full h-full object-contain bg-black"
-      />
-    );
-  }
-  return (
-    <button
-      className="w-full h-full flex flex-col items-center justify-center bg-[#3D3929] text-white"
-      onClick={() => setActive(true)}
-      title={`播放 ${name}`}
-    >
-      <PlayCircleFilled className="text-4xl opacity-80" />
-      <span className="mt-2 text-xs opacity-60">点击播放</span>
-    </button>
-  );
-};
+/** 视频占位块，点击后在可关闭预览层中播放，避免批量加载吃内存 */
+const VideoTile: React.FC<{
+  name: string;
+  onPreview: () => void;
+}> = ({ name, onPreview }) => (
+  <button
+    className="w-full h-full flex flex-col items-center justify-center bg-[#3D3929] text-white"
+    onClick={onPreview}
+    title={`预览 ${name}`}
+  >
+    <PlayCircleFilled className="text-4xl opacity-80" />
+    <span className="mt-2 text-xs opacity-60">点击预览</span>
+  </button>
+);
 
 export const Gallery: React.FC = () => {
   const { message } = App.useApp();
   const saveDirBase = useSettingsStore((s) => s.download.saveDirBase);
   const [loading, setLoading] = useState(false);
+  const [videoPreview, setVideoPreview] = useState<{
+    src: string;
+    title: string;
+  } | null>(null);
   const {
     folders,
     setFolders,
@@ -74,6 +72,8 @@ export const Gallery: React.FC = () => {
     setCurrentFolder,
     medias,
     setMedias,
+    mediaCache,
+    setMediaCache,
     visibleCount,
     setVisibleCount,
     resetVisibleCount,
@@ -81,8 +81,14 @@ export const Gallery: React.FC = () => {
     setColumns,
     fitMode,
     setFitMode,
+    viewMode,
+    setViewMode,
+    folderSortBy,
+    setFolderSortBy,
     folderSortOrder,
     setFolderSortOrder,
+    mediaSortBy,
+    setMediaSortBy,
     mediaSortOrder,
     setMediaSortOrder,
   } = useGalleryStore();
@@ -97,17 +103,40 @@ export const Gallery: React.FC = () => {
         return;
       }
       const entries = await fs.readDir(saveDirBase);
-      // 非递归 readDir 无法直接区分目录，对非媒体文件名的条目试探 readDir
-      const result: GalleryFolder[] = [];
-      for (const e of entries) {
-        if (!e.name || classifyFile(e.name)) continue;
+      const directoryEntries: fs.FileEntry[] = [];
+      for (const entry of entries) {
+        if (!entry.name || classifyFile(entry.name)) continue;
         try {
-          await fs.readDir(e.path);
-          result.push({ name: e.name, path: e.path });
+          await fs.readDir(entry.path);
+          directoryEntries.push(entry);
         } catch {
           // 非目录，跳过
         }
       }
+      const metadata = await invoke<{ path: string; modifiedAt?: number }[]>(
+        'filesystem_metadata',
+        {
+          paths: directoryEntries.map((entry) => entry.path),
+        },
+      );
+      const modifiedMap = new Map(
+        metadata.map((item) => [item.path, item.modifiedAt]),
+      );
+      const previousMap = new Map(
+        folders.map((folder) => [folder.path, folder]),
+      );
+      const result: GalleryFolder[] = directoryEntries.map((entry) => {
+        const modifiedAt = modifiedMap.get(entry.path);
+        const previous = previousMap.get(entry.path);
+        if (previous && previous.modifiedAt === modifiedAt) {
+          return previous;
+        }
+        return {
+          name: entry.name || '',
+          path: entry.path,
+          modifiedAt,
+        };
+      });
       setFolders(result);
       setFoldersLoaded(true);
     } catch (err: any) {
@@ -116,15 +145,21 @@ export const Gallery: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [saveDirBase, message, setFolders, setFoldersLoaded]);
+  }, [folders, saveDirBase, message, setFolders, setFoldersLoaded]);
 
-  // 进入某个子文件夹：只扫描该文件夹（递归其内部）
+  // 进入某个子文件夹：只有目录有变化或明确刷新时才重新扫描
   const openFolder = useCallback(
-    async (folder: GalleryFolder) => {
-      setLoading(true);
+    async (folder: GalleryFolder, force = false) => {
       setCurrentFolder(folder);
-      setMedias([]);
       resetVisibleCount();
+      const cached = mediaCache[folder.path];
+      if (!force && cached) {
+        setMedias(cached);
+        return;
+      }
+
+      setLoading(true);
+      setMedias([]);
       try {
         const entries = await fs.readDir(folder.path, { recursive: true });
         const list: {
@@ -149,7 +184,18 @@ export const Gallery: React.FC = () => {
           }
         };
         walk(entries);
-        setMedias(list);
+        const fileMetadata = await invoke<
+          { path: string; modifiedAt?: number }[]
+        >('filesystem_metadata', { paths: list.map((item) => item.path) });
+        const modifiedMap = new Map(
+          fileMetadata.map((item) => [item.path, item.modifiedAt]),
+        );
+        const enriched = list.map((item) => ({
+          ...item,
+          modifiedAt: modifiedMap.get(item.path),
+        }));
+        setMedias(enriched);
+        setMediaCache(folder.path, enriched);
       } catch (err: any) {
         log.error(err);
         message.error(`扫描文件失败：${err?.message || err}`);
@@ -157,7 +203,14 @@ export const Gallery: React.FC = () => {
         setLoading(false);
       }
     },
-    [message, setCurrentFolder, setMedias, resetVisibleCount],
+    [
+      mediaCache,
+      message,
+      resetVisibleCount,
+      setCurrentFolder,
+      setMediaCache,
+      setMedias,
+    ],
   );
 
   // 只在首次进入（或保存路径变化后）时扫描，之后使用缓存
@@ -167,26 +220,37 @@ export const Gallery: React.FC = () => {
     }
   }, [foldersLoaded, loadFolders]);
 
-  const compareNames = useCallback(
-    (a: string, b: string) =>
-      a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }),
+  const compareItems = useCallback(
+    (
+      a: { name: string; modifiedAt?: number },
+      b: { name: string; modifiedAt?: number },
+      sortBy: 'name' | 'modifiedAt',
+    ) => {
+      if (sortBy === 'modifiedAt') {
+        return (a.modifiedAt || 0) - (b.modifiedAt || 0);
+      }
+      return a.name.localeCompare(b.name, undefined, {
+        numeric: true,
+        sensitivity: 'base',
+      });
+    },
     [],
   );
   const sortedFolders = useMemo(
     () =>
       [...folders].sort((a, b) => {
-        const result = compareNames(a.name, b.name);
+        const result = compareItems(a, b, folderSortBy);
         return folderSortOrder === 'asc' ? result : -result;
       }),
-    [compareNames, folderSortOrder, folders],
+    [compareItems, folderSortBy, folderSortOrder, folders],
   );
   const sortedMedias = useMemo(
     () =>
       [...medias].sort((a, b) => {
-        const result = compareNames(a.name, b.name);
+        const result = compareItems(a, b, mediaSortBy);
         return mediaSortOrder === 'asc' ? result : -result;
       }),
-    [compareNames, mediaSortOrder, medias],
+    [compareItems, mediaSortBy, mediaSortOrder, medias],
   );
   const visibleMedias = sortedMedias.slice(0, visibleCount);
 
@@ -216,7 +280,7 @@ export const Gallery: React.FC = () => {
               icon={<ReloadOutlined />}
               size="small"
               loading={loading}
-              onClick={() => openFolder(currentFolder)}
+              onClick={() => openFolder(currentFolder, true)}
             >
               重新扫描
             </Button>
@@ -228,13 +292,26 @@ export const Gallery: React.FC = () => {
               打开目录
             </Button>
             <span className="ml-auto flex items-center gap-2 text-sm">
-              <span className="text-gray-400">每行</span>
               <Segmented
                 size="small"
-                value={columns}
-                onChange={(v) => setColumns(v as number)}
-                options={COLUMN_OPTIONS}
+                value={viewMode}
+                onChange={(v) => setViewMode(v as 'thumbnail' | 'list')}
+                options={[
+                  { label: <AppstoreOutlined />, value: 'thumbnail' },
+                  { label: <UnorderedListOutlined />, value: 'list' },
+                ]}
               />
+              {viewMode === 'thumbnail' && (
+                <>
+                  <span className="text-gray-400">每行</span>
+                  <Segmented
+                    size="small"
+                    value={columns}
+                    onChange={(v) => setColumns(v as number)}
+                    options={COLUMN_OPTIONS}
+                  />
+                </>
+              )}
               <Segmented
                 size="small"
                 value={fitMode}
@@ -244,7 +321,15 @@ export const Gallery: React.FC = () => {
                   { label: '完整显示', value: 'contain' },
                 ]}
               />
-              <span className="text-gray-400">名称</span>
+              <Segmented
+                size="small"
+                value={mediaSortBy}
+                onChange={(v) => setMediaSortBy(v as 'name' | 'modifiedAt')}
+                options={[
+                  { label: '名称', value: 'name' },
+                  { label: '修改时间', value: 'modifiedAt' },
+                ]}
+              />
               <Segmented
                 size="small"
                 value={mediaSortOrder}
@@ -279,14 +364,35 @@ export const Gallery: React.FC = () => {
               打开根目录
             </Button>
             <span className="ml-auto flex items-center gap-2 text-sm">
-              <span className="text-gray-400">每行</span>
               <Segmented
                 size="small"
-                value={columns}
-                onChange={(v) => setColumns(v as number)}
-                options={COLUMN_OPTIONS}
+                value={viewMode}
+                onChange={(v) => setViewMode(v as 'thumbnail' | 'list')}
+                options={[
+                  { label: <AppstoreOutlined />, value: 'thumbnail' },
+                  { label: <UnorderedListOutlined />, value: 'list' },
+                ]}
               />
-              <span className="text-gray-400">名称</span>
+              {viewMode === 'thumbnail' && (
+                <>
+                  <span className="text-gray-400">每行</span>
+                  <Segmented
+                    size="small"
+                    value={columns}
+                    onChange={(v) => setColumns(v as number)}
+                    options={COLUMN_OPTIONS}
+                  />
+                </>
+              )}
+              <Segmented
+                size="small"
+                value={folderSortBy}
+                onChange={(v) => setFolderSortBy(v as 'name' | 'modifiedAt')}
+                options={[
+                  { label: '名称', value: 'name' },
+                  { label: '修改时间', value: 'modifiedAt' },
+                ]}
+              />
               <Segmented
                 size="small"
                 value={folderSortOrder}
@@ -316,6 +422,24 @@ export const Gallery: React.FC = () => {
         <div className="grow overflow-auto pb-6">
           {folders.length === 0 ? (
             <Empty description="保存目录下暂无文件夹" className="mt-20" />
+          ) : viewMode === 'list' ? (
+            <div className="space-y-2">
+              {sortedFolders.map((f) => (
+                <button
+                  key={f.path}
+                  className="w-full flex items-center gap-3 p-3 bg-white border-[1px] rounded-lg text-left hover:border-ant-color-primary"
+                  onClick={() => openFolder(f)}
+                >
+                  <FolderFilled className="text-xl text-ant-color-primary" />
+                  <span className="grow truncate">{f.name}</span>
+                  <span className="text-xs text-gray-400">
+                    {f.modifiedAt
+                      ? new Date(f.modifiedAt).toLocaleString()
+                      : '修改时间未知'}
+                  </span>
+                </button>
+              ))}
+            </div>
           ) : (
             <div
               className={`grid ${COLUMN_CLASS[columns] || 'grid-cols-5'} gap-3`}
@@ -343,38 +467,88 @@ export const Gallery: React.FC = () => {
             <Empty description="该文件夹内没有媒体文件" className="mt-20" />
           ) : (
             <>
-              <Image.PreviewGroup>
-                <div
-                  className={`grid ${COLUMN_CLASS[columns] || 'grid-cols-5'} gap-2`}
-                >
+              {viewMode === 'list' ? (
+                <div className="space-y-2">
                   {visibleMedias.map((m) => {
                     const src = tauri.convertFileSrc(m.path);
                     return (
                       <div
                         key={m.path}
-                        className="relative rounded-lg overflow-hidden aspect-square bg-[#F0EEE6]"
-                        title={m.name}
+                        className="flex items-center gap-3 p-2 bg-white border-[1px] rounded-lg"
                       >
-                        {m.isVideo ? (
-                          <VideoTile src={src} name={m.name} />
-                        ) : (
-                          <Image
-                            src={src}
-                            alt={m.name}
-                            loading="lazy"
-                            width="100%"
-                            height="100%"
-                            style={{ objectFit: fitMode, height: '100%' }}
-                          />
-                        )}
-                        <span className="absolute left-1 bottom-1 right-1 truncate bg-black/60 text-white text-[10px] px-1 rounded pointer-events-none">
+                        <div className="w-16 h-16 rounded overflow-hidden bg-[#F0EEE6] shrink-0">
+                          {m.isVideo ? (
+                            <VideoTile
+                              name={m.name}
+                              onPreview={() =>
+                                setVideoPreview({ src, title: m.name })
+                              }
+                            />
+                          ) : (
+                            <Image
+                              src={src}
+                              alt={m.name}
+                              loading="lazy"
+                              width="100%"
+                              height="100%"
+                              style={{ objectFit: fitMode, height: '100%' }}
+                            />
+                          )}
+                        </div>
+                        <span className="grow truncate select-text">
                           {m.name}
                         </span>
+                        <span className="text-xs text-gray-400 shrink-0">
+                          {m.modifiedAt
+                            ? new Date(m.modifiedAt).toLocaleString()
+                            : ''}
+                        </span>
+                        <Button size="small" onClick={() => shell.open(m.path)}>
+                          打开
+                        </Button>
                       </div>
                     );
                   })}
                 </div>
-              </Image.PreviewGroup>
+              ) : (
+                <Image.PreviewGroup>
+                  <div
+                    className={`grid ${COLUMN_CLASS[columns] || 'grid-cols-5'} gap-2`}
+                  >
+                    {visibleMedias.map((m) => {
+                      const src = tauri.convertFileSrc(m.path);
+                      return (
+                        <div
+                          key={m.path}
+                          className="relative rounded-lg overflow-hidden aspect-square bg-[#F0EEE6]"
+                          title={m.name}
+                        >
+                          {m.isVideo ? (
+                            <VideoTile
+                              name={m.name}
+                              onPreview={() =>
+                                setVideoPreview({ src, title: m.name })
+                              }
+                            />
+                          ) : (
+                            <Image
+                              src={src}
+                              alt={m.name}
+                              loading="lazy"
+                              width="100%"
+                              height="100%"
+                              style={{ objectFit: fitMode, height: '100%' }}
+                            />
+                          )}
+                          <span className="absolute left-1 bottom-1 right-1 truncate bg-black/60 text-white text-[10px] px-1 rounded pointer-events-none">
+                            {m.name}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </Image.PreviewGroup>
+              )}
               {visibleCount < medias.length && (
                 <div className="flex justify-center mt-4">
                   <Button
@@ -390,6 +564,12 @@ export const Gallery: React.FC = () => {
           )}
         </div>
       )}
+      <VideoPreviewModal
+        open={!!videoPreview}
+        src={videoPreview?.src}
+        title={videoPreview?.title}
+        onClose={() => setVideoPreview(null)}
+      />
     </div>
   );
 };

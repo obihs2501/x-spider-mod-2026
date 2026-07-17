@@ -21,7 +21,7 @@ AI辅助开发旨在快速响应需求，可能在部分细节上与纯人工开
 
 ## 下载
 
-[Releases](https://github.com/hureyqi/x-spider-mod-2026/releases/latest)
+[Releases](https://github.com/obihs2501/x-spider-mod-2026/releases/latest)
 
 ## 功能
 

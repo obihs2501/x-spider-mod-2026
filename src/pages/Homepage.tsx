@@ -37,6 +37,7 @@ export const Homepage: React.FC = () => {
     batchCreateDownloadTask: s.batchCreateDownloadTask,
   }));
   const [postDownloading, setPostDownloading] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState<string[]>([]);
 
   // 解析单条帖子并展示预览（不自动下载）
   const parseSinglePost = async (url: string) => {
@@ -157,6 +158,12 @@ export const Homepage: React.FC = () => {
               <Collapse
                 ghost
                 size="small"
+                activeKey={historyOpen}
+                onChange={(keys) =>
+                  setHistoryOpen(
+                    Array.isArray(keys) ? keys.map(String) : [String(keys)],
+                  )
+                }
                 className="mt-1 -ml-4"
                 items={[
                   {
