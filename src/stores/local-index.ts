@@ -113,10 +113,24 @@ export const useLocalIndexStore = create<LocalIndexStore>()(
             if (blogger) {
               const date = extractFileDate(name) || 0;
               const currentStats = bloggerStats.get(blogger.screenName);
+              // 顶层博主目录路径：从文件路径中截取到「昵称 (@screen)」那一层
+              let directoryPath = currentStats?.directoryPath;
+              if (!directoryPath) {
+                const marker = `(@${blogger.screenName})`;
+                const idx = e.path.toLowerCase().indexOf(marker.toLowerCase());
+                if (idx >= 0) {
+                  // 找到标记结尾后的第一个分隔符
+                  const end = idx + marker.length;
+                  directoryPath = e.path.slice(0, end);
+                } else {
+                  // 回退：去掉文件名
+                  const sep = e.path.includes('\\') ? '\\' : '/';
+                  const last = e.path.lastIndexOf(sep);
+                  directoryPath = last > 0 ? e.path.slice(0, last) : e.path;
+                }
+              }
               bloggerStats.set(blogger.screenName, {
-                directoryPath:
-                  currentStats?.directoryPath ||
-                  e.path.slice(0, Math.max(0, e.path.length - name.length - 1)),
+                directoryPath,
                 mediaCount: (currentStats?.mediaCount || 0) + 1,
                 postCount: 0,
                 latestFileAt: Math.max(currentStats?.latestFileAt || 0, date),

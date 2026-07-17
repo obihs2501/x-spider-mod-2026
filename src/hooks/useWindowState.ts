@@ -76,7 +76,13 @@ export function useWindowState() {
       if (disposed) return;
       unlisteners.push(await appWindow.onResized(scheduleSave));
       unlisteners.push(await appWindow.onMoved(scheduleSave));
-    })().catch((err) => log.warn('Restore window state failed', err));
+    })().catch((err) => {
+      try {
+        log.warn('Restore window state failed', err);
+      } catch {
+        // logger 未初始化时忽略
+      }
+    });
 
     return () => {
       disposed = true;

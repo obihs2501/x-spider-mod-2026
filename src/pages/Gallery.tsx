@@ -11,7 +11,13 @@ import {
   UnorderedListOutlined,
   AppstoreOutlined,
 } from '@ant-design/icons';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { PageHeader } from '../components/PageHeader';
 import { useSettingsStore } from '../stores/settings';
 import {
@@ -63,6 +69,7 @@ export const Gallery: React.FC = () => {
     src: string;
     title: string;
   } | null>(null);
+  const openFolderTokenRef = useRef(0);
   const {
     folders,
     setFolders,
@@ -92,6 +99,8 @@ export const Gallery: React.FC = () => {
     mediaSortOrder,
     setMediaSortOrder,
   } = useGalleryStore();
+  const foldersRef = useRef(folders);
+  foldersRef.current = folders;
 
   // 顶层：只读取一层子文件夹列表（不递归，开销极小）
   const loadFolders = useCallback(async () => {
@@ -123,19 +132,29 @@ export const Gallery: React.FC = () => {
         metadata.map((item) => [item.path, item.modifiedAt]),
       );
       const previousMap = new Map(
-        folders.map((folder) => [folder.path, folder]),
+        foldersRef.current.map((folder) => [folder.path, folder]),
       );
       const result: GalleryFolder[] = directoryEntries.map((entry) => {
         const modifiedAt = modifiedMap.get(entry.path);
         const previous = previousMap.get(entry.path);
         if (previous && previous.modifiedAt === modifiedAt) {
+          // 目录修改时间变化时失效媒体缓存
           return previous;
         }
+        // 目录有变化：丢弃旧媒体缓存，下次打开重新扫描
+        setMediaCache(entry.path, []);
         return {
           name: entry.name || '',
           path: entry.path,
           modifiedAt,
         };
+      });
+      // 删除已不存在目录的缓存
+      const nextPaths = new Set(result.map((f) => f.path));
+      Object.keys(useGalleryStore.getState().mediaCache).forEach((path) => {
+        if (!nextPaths.has(path)) {
+          setMediaCache(path, []);
+        }
       });
       setFolders(result);
       setFoldersLoaded(true);
@@ -145,15 +164,17 @@ export const Gallery: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [folders, saveDirBase, message, setFolders, setFoldersLoaded]);
+  }, [saveDirBase, message, setFolders, setFoldersLoaded, setMediaCache]);
 
   // 进入某个子文件夹：只有目录有变化或明确刷新时才重新扫描
   const openFolder = useCallback(
     async (folder: GalleryFolder, force = false) => {
+      const token = ++openFolderTokenRef.current;
       setCurrentFolder(folder);
       resetVisibleCount();
       const cached = mediaCache[folder.path];
-      if (!force && cached) {
+      // 空数组表示目录变化后已失效，需要重新扫描
+      if (!force && cached && cached.length > 0) {
         setMedias(cached);
         return;
       }
@@ -162,6 +183,7 @@ export const Gallery: React.FC = () => {
       setMedias([]);
       try {
         const entries = await fs.readDir(folder.path, { recursive: true });
+        if (token !== openFolderTokenRef.current) return;
         const list: {
           path: string;
           name: string;
@@ -184,27 +206,48 @@ export const Gallery: React.FC = () => {
           }
         };
         walk(entries);
-        const fileMetadata = await invoke<
-          { path: string; modifiedAt?: number }[]
-        >('filesystem_metadata', { paths: list.map((item) => item.path) });
-        const modifiedMap = new Map(
-          fileMetadata.map((item) => [item.path, item.modifiedAt]),
-        );
-        const enriched = list.map((item) => ({
+        // 仅在需要修改时间排序时才批量取 metadata，减少大文件夹阻塞
+        let enriched = list.map((item) => ({
           ...item,
-          modifiedAt: modifiedMap.get(item.path),
+          modifiedAt: undefined as number | undefined,
         }));
+        if (mediaSortBy === 'modifiedAt' && list.length > 0) {
+          // 分批取 metadata，避免单次 IPC 过大
+          const BATCH = 500;
+          const modifiedMap = new Map<string, number | undefined>();
+          for (let i = 0; i < list.length; i += BATCH) {
+            if (token !== openFolderTokenRef.current) return;
+            const batch = list.slice(i, i + BATCH);
+            const fileMetadata = await invoke<
+              { path: string; modifiedAt?: number }[]
+            >('filesystem_metadata', {
+              paths: batch.map((item) => item.path),
+            });
+            fileMetadata.forEach((item) =>
+              modifiedMap.set(item.path, item.modifiedAt),
+            );
+          }
+          enriched = list.map((item) => ({
+            ...item,
+            modifiedAt: modifiedMap.get(item.path),
+          }));
+        }
+        if (token !== openFolderTokenRef.current) return;
         setMedias(enriched);
         setMediaCache(folder.path, enriched);
       } catch (err: any) {
+        if (token !== openFolderTokenRef.current) return;
         log.error(err);
         message.error(`扫描文件失败：${err?.message || err}`);
       } finally {
-        setLoading(false);
+        if (token === openFolderTokenRef.current) {
+          setLoading(false);
+        }
       }
     },
     [
       mediaCache,
+      mediaSortBy,
       message,
       resetVisibleCount,
       setCurrentFolder,

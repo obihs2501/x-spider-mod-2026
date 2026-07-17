@@ -88,11 +88,15 @@ export const BloggerManagement: React.FC = () => {
 
   const openIncrementalDialog = (targets: BloggerRecord[]) => {
     if (targets.length === 0) return;
-    const defaultStart = Math.min(
-      ...targets.map(
-        (b) => bloggerStats[b.screenName]?.latestFileAt || b.lastDownloadAt,
-      ),
-    );
+    let defaultStart = Number.POSITIVE_INFINITY;
+    for (const b of targets) {
+      const ts =
+        bloggerStats[b.screenName]?.latestFileAt || b.lastDownloadAt || 0;
+      if (ts < defaultStart) defaultStart = ts;
+    }
+    if (!Number.isFinite(defaultStart) || defaultStart <= 0) {
+      defaultStart = Date.now();
+    }
     setIncrementalTargets(targets);
     setIncrementalStart(dayjs(defaultStart));
   };

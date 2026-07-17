@@ -118,12 +118,24 @@ export const PostListGridView: React.FC = () => {
           const actionPreview: GridViewItemAction = {
             name: media.type === MediaType.Photo ? '预览图片' : '预览视频',
             onClick: () => {
-              if (media.type === MediaType.Photo) {
-                setImagePreview(`${media.url}?format=jpg&name=orig`);
-                return;
+              try {
+                if (media.type === MediaType.Photo) {
+                  if (!media.url) {
+                    message.warning('该图片没有预览链接');
+                    return;
+                  }
+                  const url = new URL(media.url);
+                  url.searchParams.set('format', 'jpg');
+                  url.searchParams.set('name', 'orig');
+                  setImagePreview(url.href);
+                  return;
+                }
+                const src = getDownloadUrl(media);
+                setVideoPreview({ src, title: media.id || '视频预览' });
+              } catch (err: any) {
+                log.error(err);
+                message.error(`预览失败：${err?.message || '未知原因'}`);
               }
-              const src = getDownloadUrl(media);
-              setVideoPreview({ src, title: media.id || '视频预览' });
             },
           };
 

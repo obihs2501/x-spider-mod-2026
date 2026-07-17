@@ -67,9 +67,17 @@ export const useGalleryStore = create<GalleryStore>()(
       setMedias: (m) => set({ medias: m }),
       mediaCache: {},
       setMediaCache: (folderPath, medias) =>
-        set((state) => ({
-          mediaCache: { ...state.mediaCache, [folderPath]: medias },
-        })),
+        set((state) => {
+          // 空数组表示失效缓存：删除该 key
+          if (!medias || medias.length === 0) {
+            const next = { ...state.mediaCache };
+            delete next[folderPath];
+            return { mediaCache: next };
+          }
+          return {
+            mediaCache: { ...state.mediaCache, [folderPath]: medias },
+          };
+        }),
       visibleCount: GALLERY_PAGE_SIZE,
       setVisibleCount: (updater) =>
         set((s) => ({ visibleCount: updater(s.visibleCount) })),
