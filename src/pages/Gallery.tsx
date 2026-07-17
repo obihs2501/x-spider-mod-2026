@@ -81,6 +81,7 @@ export const Gallery: React.FC = () => {
     setMedias,
     mediaCache,
     setMediaCache,
+    invalidateMediaCache,
     visibleCount,
     setVisibleCount,
     resetVisibleCount,
@@ -138,11 +139,11 @@ export const Gallery: React.FC = () => {
         const modifiedAt = modifiedMap.get(entry.path);
         const previous = previousMap.get(entry.path);
         if (previous && previous.modifiedAt === modifiedAt) {
-          // 目录修改时间变化时失效媒体缓存
+          // 目录未变化：复用摘要
           return previous;
         }
-        // 目录有变化：丢弃旧媒体缓存，下次打开重新扫描
-        setMediaCache(entry.path, []);
+        // 目录有变化：失效旧媒体缓存，下次打开重新扫描
+        invalidateMediaCache(entry.path);
         return {
           name: entry.name || '',
           path: entry.path,
@@ -153,7 +154,7 @@ export const Gallery: React.FC = () => {
       const nextPaths = new Set(result.map((f) => f.path));
       Object.keys(useGalleryStore.getState().mediaCache).forEach((path) => {
         if (!nextPaths.has(path)) {
-          setMediaCache(path, []);
+          invalidateMediaCache(path);
         }
       });
       setFolders(result);
@@ -164,7 +165,13 @@ export const Gallery: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [saveDirBase, message, setFolders, setFoldersLoaded, setMediaCache]);
+  }, [
+    saveDirBase,
+    message,
+    setFolders,
+    setFoldersLoaded,
+    invalidateMediaCache,
+  ]);
 
   // 进入某个子文件夹：只有目录有变化或明确刷新时才重新扫描
   const openFolder = useCallback(
@@ -173,8 +180,8 @@ export const Gallery: React.FC = () => {
       setCurrentFolder(folder);
       resetVisibleCount();
       const cached = mediaCache[folder.path];
-      // 空数组表示目录变化后已失效，需要重新扫描
-      if (!force && cached && cached.length > 0) {
+      // 命中缓存（含空目录缓存）时直接复用
+      if (!force && cached) {
         setMedias(cached);
         return;
       }

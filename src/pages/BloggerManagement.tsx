@@ -112,6 +112,7 @@ export const BloggerManagement: React.FC = () => {
 
   const confirmIncremental = async () => {
     const targets = incrementalTargets;
+    if (targets.length === 0) return;
     setIncrementalTargets([]);
     setBatchProgress({ current: 0, total: targets.length });
     const failed: string[] = [];

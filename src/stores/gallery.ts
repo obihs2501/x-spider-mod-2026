@@ -31,6 +31,7 @@ export interface GalleryStore {
   setMedias: (m: GalleryMedia[]) => void;
   mediaCache: Record<string, GalleryMedia[]>;
   setMediaCache: (path: string, medias: GalleryMedia[]) => void;
+  invalidateMediaCache: (path: string) => void;
   visibleCount: number;
   setVisibleCount: (updater: (c: number) => number) => void;
   resetVisibleCount: () => void;
@@ -67,16 +68,16 @@ export const useGalleryStore = create<GalleryStore>()(
       setMedias: (m) => set({ medias: m }),
       mediaCache: {},
       setMediaCache: (folderPath, medias) =>
+        set((state) => ({
+          // 允许缓存空文件夹结果，避免每次打开空目录都重新扫描
+          mediaCache: { ...state.mediaCache, [folderPath]: medias },
+        })),
+      invalidateMediaCache: (folderPath) =>
         set((state) => {
-          // 空数组表示失效缓存：删除该 key
-          if (!medias || medias.length === 0) {
-            const next = { ...state.mediaCache };
-            delete next[folderPath];
-            return { mediaCache: next };
-          }
-          return {
-            mediaCache: { ...state.mediaCache, [folderPath]: medias },
-          };
+          if (!(folderPath in state.mediaCache)) return state;
+          const next = { ...state.mediaCache };
+          delete next[folderPath];
+          return { mediaCache: next };
         }),
       visibleCount: GALLERY_PAGE_SIZE,
       setVisibleCount: (updater) =>

@@ -163,7 +163,20 @@ export const PostListGridView: React.FC = () => {
               <div className="h-full">
                 <img
                   alt="推文图片"
-                  src={`${media.url}?format=jpg&name=small`}
+                  src={
+                    media.url
+                      ? (() => {
+                          try {
+                            const url = new URL(media.url);
+                            url.searchParams.set('format', 'jpg');
+                            url.searchParams.set('name', 'small');
+                            return url.href;
+                          } catch {
+                            return media.url;
+                          }
+                        })()
+                      : undefined
+                  }
                   loading="lazy"
                   className="object-cover w-full h-full transform transition-transform group-hover:scale-105"
                 />
