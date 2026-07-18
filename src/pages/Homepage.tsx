@@ -7,6 +7,7 @@ import { PostListGridView } from '../components/homepage/PostListGridView';
 import { DownloadController } from '../components/homepage/DownloadController';
 import { PostPreview } from '../components/homepage/PostPreview';
 import { useAppStateStore } from '../stores/app-state';
+import { useAccountsStore } from '../stores/accounts';
 import { useHomepageStore } from '../stores/homepage';
 import { useDownloadStore } from '../stores/download';
 import { buildUserUrl, parsePostUrl } from '../twitter/url';
@@ -25,13 +26,15 @@ export const Homepage: React.FC = () => {
     postPreview,
     setPostPreview,
   } = useHomepageStore();
-  const { searchHistory, addSearchHistory, clearSearchHistory, cookieString } =
+  const { searchHistory, addSearchHistory, clearSearchHistory } =
     useAppStateStore((s) => ({
       searchHistory: s.searchHistory,
       addSearchHistory: s.addSearchHistory,
       clearSearchHistory: s.clearSearchHistory,
-      cookieString: s.cookieString,
     }));
+  const hasAccount = useAccountsStore((s) =>
+    s.accounts.some((a) => a.enabled && a.cookieString),
+  );
   const searchAbortControllerRef = useRef<AbortController>();
   const { batchCreateDownloadTask } = useDownloadStore((s) => ({
     batchCreateDownloadTask: s.batchCreateDownloadTask,
@@ -125,7 +128,7 @@ export const Homepage: React.FC = () => {
                 value={keyword}
                 onChange={(e) => setKeyword(e.target.value)}
                 placeholder={
-                  cookieString
+                  hasAccount
                     ? '输入用户 ID 或帖子链接，如：shiratamacaron 或 https://x.com/xxx/status/123'
                     : '免登录模式：输入用户 ID 或帖子链接（仅公开账号）'
                 }

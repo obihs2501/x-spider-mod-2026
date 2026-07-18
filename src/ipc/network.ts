@@ -26,23 +26,54 @@ export async function request(options: RequestOptions) {
   let remainingRetryCount = MAX_RETRY_COUNT;
   let retryDelay = 100;
   let lastErr: any;
+  let headers = R.defaultTo({}, options.headers);
+
+  // 429 时尝试通过回调换取新的鉴权头（账号池切号）；成功则立即重试
+  const trySwitchHeadersOn429 = async (): Promise<boolean> => {
+    if (!options.on429) return false;
+    try {
+      const newHeaders = await options.on429();
+      if (newHeaders) {
+        headers = newHeaders;
+        return true;
+      }
+    } catch (err) {
+      log.warn('on429 handler failed', err);
+    }
+    return false;
+  };
 
   while (remainingRetryCount > 0) {
     try {
-      return await requestInternal(
+      const res = await requestInternal(
         R.defaultTo('GET', options.method),
         url.href,
         R.defaultTo('', options.body),
         settings.proxy.enable,
         settings.proxy.useSystem ? '' : settings.proxy.url,
-        R.defaultTo({}, options.headers),
+        headers,
         options.responseType,
       );
+
+      if (res.status === 429 && (await trySwitchHeadersOn429())) {
+        log.warn('Got 429 response, switched account and retry');
+        remainingRetryCount--;
+        continue;
+      }
+
+      return res;
     } catch (err: any) {
       lastErr = err;
       const errText = String(err?.message || err || '');
       // 429 速率限制可重试，其他 4xx/5xx 和 JSON 解析错误不可重试
       const is429 = errText.includes('HTTP 429');
+
+      if (is429 && (await trySwitchHeadersOn429())) {
+        log.warn('Got 429 error, switched account and retry');
+        remainingRetryCount--;
+        continue;
+      }
+
       const nonRetryable =
         !is429 &&
         (errText.includes('响应不是有效 JSON') ||

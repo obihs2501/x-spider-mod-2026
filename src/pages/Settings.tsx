@@ -3,7 +3,11 @@ import React from 'react';
 import { PageHeader } from '../components/PageHeader';
 import { Section } from '../components/settings/Section';
 import { Item } from '../components/settings/Item';
-import { DownloadOutlined, GlobalOutlined } from '@ant-design/icons';
+import {
+  DownloadOutlined,
+  GlobalOutlined,
+  TeamOutlined,
+} from '@ant-design/icons';
 import Joi from 'joi';
 import { SavePathSelector } from '../components/settings/SavePathSelector';
 import { Button, Input, Radio, Switch } from 'antd';
@@ -122,6 +126,48 @@ export const Settings: React.FC = () => {
           }}
         >
           <Input placeholder="代理地址，例如：“http://127.0.0.1:7890”" />
+        </Item>
+      </Section>
+      <Section
+        title="账号轮换"
+        name="accountRotation"
+        titleIcon={<TeamOutlined />}
+      >
+        <Item
+          label="按博主轮换"
+          settingKey="rotateOnBlogger"
+          valuePropName="checked"
+          description="每开始一个博主的批量下载任务时，自动切换到账号池中的下一个可用账号，分摊请求量。"
+        >
+          <Switch />
+        </Item>
+        <Item
+          label="按请求数轮换"
+          settingKey="rotateEveryNRequests"
+          description="当前账号每发起 N 次 API 请求后自动切换到下一个可用账号，填 0 表示关闭。"
+          validator={(value) => {
+            return Joi.number()
+              .integer()
+              .min(0)
+              .message('请输入 0 或正整数')
+              .validate(value).error?.message;
+          }}
+        >
+          <Input type="number" min={0} placeholder="例如：50（0 为关闭）" />
+        </Item>
+        <Item
+          label="限流冷却时长（分钟）"
+          settingKey="rateLimitCooldownMinutes"
+          description="账号收到 429 限流后进入冷却，冷却期间不参与轮换；冷却结束自动恢复可用。"
+          validator={(value) => {
+            return Joi.number()
+              .integer()
+              .min(1)
+              .message('请输入正整数')
+              .validate(value).error?.message;
+          }}
+        >
+          <Input type="number" min={1} placeholder="默认：15" />
         </Item>
       </Section>
       <Section title="应用" name="app">

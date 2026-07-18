@@ -52,6 +52,11 @@ export const useSettingsStore = create(
           delete state.download.savePath;
         }
 
+        // v3 新增账号轮换配置
+        if (version <= 2 && !state.accountRotation) {
+          state.accountRotation = DEFAULT_SETTINGS.accountRotation;
+        }
+
         return state;
       },
     },

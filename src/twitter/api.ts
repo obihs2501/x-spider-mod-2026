@@ -12,7 +12,8 @@ import {
 import { TwitterPost } from '../interfaces/TwitterPost';
 import { TwitterUser } from '../interfaces/TwitterUser';
 import { request } from '../ipc/network';
-import { useAppStateStore } from '../stores/app-state';
+import { useAccountsStore } from '../stores/accounts';
+import { useSettingsStore } from '../stores/settings';
 import { parseCookie } from '../utils/cookie';
 import MediaType from '../enums/MediaType';
 import { getGuestToken, PUBLIC_BEARER } from './guest';
@@ -22,23 +23,26 @@ const HOST = 'x.com';
 /**
  * 构建带鉴权的通用请求头。
  *
- * - 若用户已配置 Cookie，则使用登录态（可访问受保护/敏感内容）。
- * - 若未配置 Cookie，则自动激活并使用「游客令牌」，无需登录即可获取公开账号的原画质媒体。
+ * - 账号池中有可用账号时使用其登录态（可访问受保护/敏感内容），
+ *   并按设置里的「按请求数轮换」计数。
+ * - 无可用账号时，自动激活并使用「游客令牌」，无需登录即可获取公开账号的原画质媒体。
  */
 async function getAuthedHeaders(): Promise<Record<string, string>> {
-  const cookies = useAppStateStore.getState().cookieString?.trim();
+  const pool = useAccountsStore.getState();
+  pool.noteRequest();
+  const account = pool.getActiveAccount();
 
-  if (cookies) {
+  if (account) {
     return {
       'User-Agent': navigator.userAgent,
       Referer: `https://${HOST}`,
       Authorization: PUBLIC_BEARER,
-      Cookie: cookies,
-      'X-Csrf-Token': parseCookie(cookies)['ct0'],
+      Cookie: account.cookieString,
+      'X-Csrf-Token': parseCookie(account.cookieString)['ct0'],
     };
   }
 
-  // 无 Cookie：走游客令牌
+  // 无可用账号：走游客令牌
   const guestToken = await getGuestToken();
   return {
     'User-Agent': navigator.userAgent,
@@ -48,8 +52,29 @@ async function getAuthedHeaders(): Promise<Record<string, string>> {
   };
 }
 
+/**
+ * 429 处理：把当前账号标记为限流冷却并轮换到下一个可用账号，
+ * 返回基于新账号的请求头；没有可切换的账号时返回 null（走默认延迟重试）。
+ */
+async function handle429(): Promise<Record<string, string> | null> {
+  const pool = useAccountsStore.getState();
+  const active = pool.getActiveAccount();
+  if (!active) return null;
+
+  const cooldownMinutes = Number(
+    useSettingsStore.getState().accountRotation?.rateLimitCooldownMinutes,
+  );
+  const cooldownMs = (cooldownMinutes > 0 ? cooldownMinutes : 15) * 60 * 1000;
+  pool.markRateLimited(active.id, cooldownMs);
+
+  const next = pool.getActiveAccount();
+  if (!next) return null;
+  return getAuthedHeaders();
+}
+
 function getCommonHeaders(withCredentials = true): Record<string, string> {
-  const cookies = useAppStateStore.getState().cookieString;
+  const cookies =
+    useAccountsStore.getState().getActiveAccount()?.cookieString || '';
   return {
     'User-Agent': navigator.userAgent,
     Referer: `https://${HOST}`,
@@ -122,6 +147,7 @@ export async function getUser(screenName: string): Promise<TwitterUser> {
       }),
     },
     headers: await getAuthedHeaders(),
+    on429: handle429,
   });
   ensureResponse(resp);
 
@@ -301,6 +327,7 @@ export async function getUserMedias(
       }),
     },
     headers: await getAuthedHeaders(),
+    on429: handle429,
   });
   ensureResponse(resp);
 
@@ -446,6 +473,7 @@ export async function getUserTweets(
       }),
     },
     headers: await getAuthedHeaders(),
+    on429: handle429,
   });
   ensureResponse(resp);
 
@@ -596,6 +624,7 @@ export async function getTweetDetail(tweetId: string): Promise<TwitterPost> {
       }),
     },
     headers: await getAuthedHeaders(),
+    on429: handle429,
   });
   ensureResponse(resp);
 

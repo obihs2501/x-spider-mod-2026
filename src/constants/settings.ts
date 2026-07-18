@@ -14,6 +14,11 @@ export const DEFAULT_SETTINGS: Settings = {
     sameFileSkip: true,
     consecutiveSkipThreshold: 20,
   },
+  accountRotation: {
+    rotateOnBlogger: true,
+    rotateEveryNRequests: 0,
+    rateLimitCooldownMinutes: 15,
+  },
   app: {
     autoCheckUpdate: true,
     acceptPrerelease: false,
@@ -22,4 +27,4 @@ export const DEFAULT_SETTINGS: Settings = {
   },
 };
 
-export const CURRENT_SETTINGS_VERSION = 2;
+export const CURRENT_SETTINGS_VERSION = 3;

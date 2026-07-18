@@ -61,6 +61,10 @@ const VideoTile: React.FC<{
   </button>
 );
 
+// 每个应用会话只做一次后台增量校验：重启后先展示持久化的文件夹列表，
+// 再通过 loadFolders 的 modifiedAt 对比静默同步磁盘变化，不清空已展示内容
+let revalidatedThisSession = false;
+
 export const Gallery: React.FC = () => {
   const { message } = App.useApp();
   const saveDirBase = useSettingsStore((s) => s.download.saveDirBase);
@@ -263,9 +267,10 @@ export const Gallery: React.FC = () => {
     ],
   );
 
-  // 只在首次进入（或保存路径变化后）时扫描，之后使用缓存
+  // 首次进入扫描；重启后（持久化列表已展示）只做一次后台增量校验
   useEffect(() => {
-    if (!foldersLoaded) {
+    if (!foldersLoaded || !revalidatedThisSession) {
+      revalidatedThisSession = true;
       loadFolders();
     }
   }, [foldersLoaded, loadFolders]);
@@ -461,14 +466,14 @@ export const Gallery: React.FC = () => {
         <Empty description="请先在「设置」中配置保存路径" className="mt-20" />
       )}
 
-      {loading && (
+      {loading && (currentFolder || folders.length === 0) && (
         <div className="flex justify-center mt-20">
           <Spin tip="正在读取…" />
         </div>
       )}
 
-      {/* 文件夹列表视图 */}
-      {saveDirBase && !loading && !currentFolder && (
+      {/* 文件夹列表视图：后台增量校验时保留已展示的列表，不闪屏 */}
+      {saveDirBase && !currentFolder && (!loading || folders.length > 0) && (
         <div className="grow overflow-auto pb-6">
           {folders.length === 0 ? (
             <Empty description="保存目录下暂无文件夹" className="mt-20" />

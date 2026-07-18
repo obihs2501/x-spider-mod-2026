@@ -52,6 +52,9 @@ body {
 .theme-dark .bg-\[\#F0EEE6\] {
   background-color: #1f1e1d !important;
 }
+.theme-dark .bg-gray-100 {
+  background-color: #1f1e1d !important;
+}
 .theme-dark .border-\[\#E8E6DC\],
 .theme-dark .border-gray-300 {
   border-color: #3f3e3a !important;

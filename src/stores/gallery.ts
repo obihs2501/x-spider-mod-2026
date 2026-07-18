@@ -105,6 +105,11 @@ export const useGalleryStore = create<GalleryStore>()(
       version: 1,
       partialize: (state) =>
         ({
+          // 持久化文件夹摘要，重启后画廊直接展示上次的列表，
+          // 由页面在每个会话首次进入时后台增量校验（modifiedAt 对比）。
+          // mediaCache 可能很大且 persist 每次 set 都全量写盘，故不持久化。
+          folders: state.folders,
+          foldersLoaded: state.foldersLoaded,
           columns: state.columns,
           fitMode: state.fitMode,
           viewMode: state.viewMode,

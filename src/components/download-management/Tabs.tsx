@@ -50,7 +50,7 @@ export const Tabs: React.FC<TabsProps> = ({ tabs }) => {
                 onClick={() => setCurrentTab(tab.name)}
                 className={clsx(
                   'bg-transparent text-xl relative transition-colors hover:text-ant-color-primary',
-                  tab.name === currentTab && 'font-bold !text-black',
+                  tab.name === currentTab && 'font-bold !text-ant-color-text',
                 )}
               >
                 {tab.name}

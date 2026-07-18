@@ -15,6 +15,7 @@ import { TwitterUser } from '../interfaces/TwitterUser';
 import { AriaStatus, aria2 } from '../utils/aria2';
 import { getUserMedias, getUserTweets } from '../twitter/api';
 import { useSettingsStore } from './settings';
+import { useAccountsStore } from './accounts';
 import { getDownloadUrl } from '../twitter/utils';
 import { resolveVariables } from '../utils/file-name-template';
 import { FileNameTemplateData } from '../interfaces/FileNameTemplateData';
@@ -134,263 +135,265 @@ export interface DownloadStore {
 export const useDownloadStore = create<DownloadStore>()(
   persist(
     (set, get) => ({
-  currentTab: '',
-  setCurrentTab: (tab) => set({ currentTab: tab }),
+      currentTab: '',
+      setCurrentTab: (tab) => set({ currentTab: tab }),
 
-  autoSyncTaskIds: [],
-  setAutoSyncTaskIds: (ids) => set({ autoSyncTaskIds: ids }),
+      autoSyncTaskIds: [],
+      setAutoSyncTaskIds: (ids) => set({ autoSyncTaskIds: ids }),
 
-  downloadTasks: [],
-  createDownloadTask: async (params) => {
-    const task = await prepareDownloadTask(params);
-
-    const gid = await aria2.invoke('aria2.addUri', [task.downloadUrl], {
-      dir: task.dir,
-      out: task.fileName,
-    });
-    task.gid = gid;
-
-    const status = await aria2.tellStatus(task.gid);
-    task.status = status.status;
-
-    set({
-      downloadTasks: get().downloadTasks.concat(task),
-    });
-  },
-  updateDownloadTask: (task, now = Date.now()) => {
-    const oldTasks = get().downloadTasks;
-    const oldTaskIndex = get().downloadTasks.findIndex(
-      (t) => t.gid === task.gid,
-    );
-    if (oldTaskIndex === -1) return;
-    const oldTask = oldTasks[oldTaskIndex];
-    if (oldTask.updatedAt > now) return;
-    const newTasks = R.adjust(oldTaskIndex, R.always(task))(oldTasks);
-    set({
-      downloadTasks: newTasks,
-    });
-  },
-  batchUpdateDownloadTasks: (tasks) => {
-    const { downloadTasks: oldTasks } = get();
-    const newTaskMap = R.pipe<
-      [DownloadTask[]],
-      [DownloadTask['gid'], DownloadTask][],
-      Record<string, DownloadTask>
-    >(
-      R.map((t: DownloadTask) => [t.gid, t]),
-      R.fromPairs,
-    )(tasks);
-
-    const newTasks = oldTasks.map((oldTask) => {
-      const newTask = newTaskMap[oldTask.gid];
-      if (!newTask) return oldTask;
-      if (newTask.updatedAt < oldTask.updatedAt) {
-        return oldTask;
-      }
-      return newTask;
-    });
-
-    set({
-      downloadTasks: newTasks,
-    });
-  },
-  batchCreateDownloadTask: async (paramsList) => {
-    const tasks: DownloadTask[] = [];
-
-    for (const params of paramsList) {
-      const task = await prepareDownloadTask(params);
-      tasks.push(task);
-    }
-
-    if (tasks.length === 0) {
-      return;
-    }
-
-    const gids: string[] = (
-      await aria2.batchInvoke(
-        tasks.map((task) => ({
-          methodName: 'aria2.addUri',
-          params: [
-            [task.downloadUrl],
-            {
-              dir: task.dir,
-              out: task.fileName,
-            },
-          ],
-        })),
-      )
-    ).flat();
-
-    const statusMap = await aria2.tellStatus(gids);
-
-    tasks.forEach((task, index) => {
-      task.gid = gids[index];
-      task.status = statusMap[task.gid].status;
-    });
-
-    const newTasks = get().downloadTasks.concat(tasks);
-    set({
-      downloadTasks: newTasks,
-    });
-  },
-  pauseDownloadTask: async (gid) => {
-    await aria2.invoke('aria2.pause', gid);
-  },
-  pauseAllDownloadTask: async () => {
-    await aria2.invoke('aria2.pauseAll');
-  },
-  unpauseDownloadTask: async (gid) => {
-    await aria2.invoke('aria2.unpause', gid);
-  },
-  unpauseAllDownloadTask: async () => {
-    await aria2.invoke('aria2.unpauseAll');
-  },
-  removeDownloadTask: async (gid) => {
-    aria2.invoke('aria2.remove', gid).catch((err) => {
-      log().warn('Remove aria2 task failed', { gid, err });
-    });
-    const state = get();
-    set({
-      downloadTasks: R.filter((v: DownloadTask) => v.gid !== gid)(
-        state.downloadTasks,
-      ),
-      autoSyncTaskIds: R.filter((v: string) => v !== gid)(
-        state.autoSyncTaskIds,
-      ),
-    });
-  },
-  batchRemoveDownloadTasks: async (gids) => {
-    aria2
-      .batchInvoke(
-        gids.map((gid) => ({
-          methodName: 'aria2.remove',
-          params: [gid],
-        })),
-      )
-      .catch((err) => {
-        log().error({ gids, err });
-      });
-    set({
-      downloadTasks: R.filter((v: DownloadTask) => !gids.includes(v.gid))(
-        get().downloadTasks,
-      ),
-    });
-  },
-  redownloadTask: async (gid) => {
-    const store = get();
-    const oldTask = store.downloadTasks.find((t) => t.gid === gid);
-    if (!oldTask) {
-      throw new Error('找不到旧的下载任务');
-    }
-    await store.removeDownloadTask(oldTask.gid);
-    await store.createDownloadTask({
-      post: oldTask.post,
-      media: oldTask.media,
-    });
-  },
-  batchRedownloadTask: async (gids) => {
-    const store = get();
-    const oldTasks = store.downloadTasks.filter((t) => gids.includes(t.gid));
-    if (oldTasks.length === 0) {
-      throw new Error('找不到旧的下载任务');
-    }
-
-    await store.batchRemoveDownloadTasks(gids);
-    await store.batchCreateDownloadTask(
-      oldTasks.map((task) => ({
-        media: task.media,
-        post: task.post,
-      })),
-    );
-  },
-  syncDownloadTaskStatus: async (gid) => {
-    const { downloadTasks, updateDownloadTask, removeDownloadTask } = get();
-    const index = downloadTasks.findIndex((v) => v.gid === gid);
-    if (index === -1) {
-      return;
-    }
-    const task = downloadTasks[index];
-    const now = Date.now();
-    const status = await aria2.tellStatus(gid);
-
-    if (status.status === 'error') {
-      if (task.ariaRetryCountRemains > 0) {
-        log().warn(
-          `Task download failed, retry it. RetryCountRemains: ${task.ariaRetryCountRemains}`,
-          task,
-        );
-        removeDownloadTask(task.gid);
-
-        const newTask = await prepareDownloadTask({
-          post: task.post,
-          media: task.media,
-        });
-        newTask.ariaRetryCountRemains = task.ariaRetryCountRemains - 1;
+      downloadTasks: [],
+      createDownloadTask: async (params) => {
+        const task = await prepareDownloadTask(params);
 
         const gid = await aria2.invoke('aria2.addUri', [task.downloadUrl], {
-          dir: newTask.dir,
-          out: newTask.fileName,
+          dir: task.dir,
+          out: task.fileName,
         });
-        newTask.gid = gid;
+        task.gid = gid;
 
         const status = await aria2.tellStatus(task.gid);
-        newTask.status = status.status;
+        task.status = status.status;
 
         set({
-          downloadTasks: get().downloadTasks.concat(newTask),
+          downloadTasks: get().downloadTasks.concat(task),
         });
-      } else {
-        const newTask = await mergeAriaStatusToDownloadTask(status, task);
-        const msg = '任务下载失败';
-        const desc = `${newTask.fileName}\n${newTask.error || '未知原因'}`;
-        log().error('Task download failed', newTask);
-        antNotification.error({
-          message: msg,
-          description: desc,
+      },
+      updateDownloadTask: (task, now = Date.now()) => {
+        const oldTasks = get().downloadTasks;
+        const oldTaskIndex = get().downloadTasks.findIndex(
+          (t) => t.gid === task.gid,
+        );
+        if (oldTaskIndex === -1) return;
+        const oldTask = oldTasks[oldTaskIndex];
+        if (oldTask.updatedAt > now) return;
+        const newTasks = R.adjust(oldTaskIndex, R.always(task))(oldTasks);
+        set({
+          downloadTasks: newTasks,
         });
-        notification.sendNotification({
-          title: msg,
-          body: desc,
+      },
+      batchUpdateDownloadTasks: (tasks) => {
+        const { downloadTasks: oldTasks } = get();
+        const newTaskMap = R.pipe<
+          [DownloadTask[]],
+          [DownloadTask['gid'], DownloadTask][],
+          Record<string, DownloadTask>
+        >(
+          R.map((t: DownloadTask) => [t.gid, t]),
+          R.fromPairs,
+        )(tasks);
+
+        const newTasks = oldTasks.map((oldTask) => {
+          const newTask = newTaskMap[oldTask.gid];
+          if (!newTask) return oldTask;
+          if (newTask.updatedAt < oldTask.updatedAt) {
+            return oldTask;
+          }
+          return newTask;
         });
-      }
-    } else {
-      const newTask = await mergeAriaStatusToDownloadTask(status, task);
-      updateDownloadTask(newTask, now);
-    }
-  },
+
+        set({
+          downloadTasks: newTasks,
+        });
+      },
+      batchCreateDownloadTask: async (paramsList) => {
+        const tasks: DownloadTask[] = [];
+
+        for (const params of paramsList) {
+          const task = await prepareDownloadTask(params);
+          tasks.push(task);
+        }
+
+        if (tasks.length === 0) {
+          return;
+        }
+
+        const gids: string[] = (
+          await aria2.batchInvoke(
+            tasks.map((task) => ({
+              methodName: 'aria2.addUri',
+              params: [
+                [task.downloadUrl],
+                {
+                  dir: task.dir,
+                  out: task.fileName,
+                },
+              ],
+            })),
+          )
+        ).flat();
+
+        const statusMap = await aria2.tellStatus(gids);
+
+        tasks.forEach((task, index) => {
+          task.gid = gids[index];
+          task.status = statusMap[task.gid].status;
+        });
+
+        const newTasks = get().downloadTasks.concat(tasks);
+        set({
+          downloadTasks: newTasks,
+        });
+      },
+      pauseDownloadTask: async (gid) => {
+        await aria2.invoke('aria2.pause', gid);
+      },
+      pauseAllDownloadTask: async () => {
+        await aria2.invoke('aria2.pauseAll');
+      },
+      unpauseDownloadTask: async (gid) => {
+        await aria2.invoke('aria2.unpause', gid);
+      },
+      unpauseAllDownloadTask: async () => {
+        await aria2.invoke('aria2.unpauseAll');
+      },
+      removeDownloadTask: async (gid) => {
+        aria2.invoke('aria2.remove', gid).catch((err) => {
+          log().warn('Remove aria2 task failed', { gid, err });
+        });
+        const state = get();
+        set({
+          downloadTasks: R.filter((v: DownloadTask) => v.gid !== gid)(
+            state.downloadTasks,
+          ),
+          autoSyncTaskIds: R.filter((v: string) => v !== gid)(
+            state.autoSyncTaskIds,
+          ),
+        });
+      },
+      batchRemoveDownloadTasks: async (gids) => {
+        aria2
+          .batchInvoke(
+            gids.map((gid) => ({
+              methodName: 'aria2.remove',
+              params: [gid],
+            })),
+          )
+          .catch((err) => {
+            log().error({ gids, err });
+          });
+        set({
+          downloadTasks: R.filter((v: DownloadTask) => !gids.includes(v.gid))(
+            get().downloadTasks,
+          ),
+        });
+      },
+      redownloadTask: async (gid) => {
+        const store = get();
+        const oldTask = store.downloadTasks.find((t) => t.gid === gid);
+        if (!oldTask) {
+          throw new Error('找不到旧的下载任务');
+        }
+        await store.removeDownloadTask(oldTask.gid);
+        await store.createDownloadTask({
+          post: oldTask.post,
+          media: oldTask.media,
+        });
+      },
+      batchRedownloadTask: async (gids) => {
+        const store = get();
+        const oldTasks = store.downloadTasks.filter((t) =>
+          gids.includes(t.gid),
+        );
+        if (oldTasks.length === 0) {
+          throw new Error('找不到旧的下载任务');
+        }
+
+        await store.batchRemoveDownloadTasks(gids);
+        await store.batchCreateDownloadTask(
+          oldTasks.map((task) => ({
+            media: task.media,
+            post: task.post,
+          })),
+        );
+      },
+      syncDownloadTaskStatus: async (gid) => {
+        const { downloadTasks, updateDownloadTask, removeDownloadTask } = get();
+        const index = downloadTasks.findIndex((v) => v.gid === gid);
+        if (index === -1) {
+          return;
+        }
+        const task = downloadTasks[index];
+        const now = Date.now();
+        const status = await aria2.tellStatus(gid);
+
+        if (status.status === 'error') {
+          if (task.ariaRetryCountRemains > 0) {
+            log().warn(
+              `Task download failed, retry it. RetryCountRemains: ${task.ariaRetryCountRemains}`,
+              task,
+            );
+            removeDownloadTask(task.gid);
+
+            const newTask = await prepareDownloadTask({
+              post: task.post,
+              media: task.media,
+            });
+            newTask.ariaRetryCountRemains = task.ariaRetryCountRemains - 1;
+
+            const gid = await aria2.invoke('aria2.addUri', [task.downloadUrl], {
+              dir: newTask.dir,
+              out: newTask.fileName,
+            });
+            newTask.gid = gid;
+
+            const status = await aria2.tellStatus(task.gid);
+            newTask.status = status.status;
+
+            set({
+              downloadTasks: get().downloadTasks.concat(newTask),
+            });
+          } else {
+            const newTask = await mergeAriaStatusToDownloadTask(status, task);
+            const msg = '任务下载失败';
+            const desc = `${newTask.fileName}\n${newTask.error || '未知原因'}`;
+            log().error('Task download failed', newTask);
+            antNotification.error({
+              message: msg,
+              description: desc,
+            });
+            notification.sendNotification({
+              title: msg,
+              body: desc,
+            });
+          }
+        } else {
+          const newTask = await mergeAriaStatusToDownloadTask(status, task);
+          updateDownloadTask(newTask, now);
+        }
+      },
 
       creationTasks: [],
       createCreationTask: (user, filter) => {
         // 记录到已下载博主列表，供增量下载使用
         useBloggerStore.getState().recordDownload(user);
         const id = nanoid();
-    const abortController = new AbortController();
-    creationTaskAbortControllerMap.set(id, abortController);
-    set({
-      creationTasks: [
-        ...get().creationTasks,
-        {
-          id,
-          user,
-          filter,
-          status: 'waiting',
-          completeCount: 0,
-          skipCount: 0,
-        },
-      ],
-    });
-  },
-  removeCreationTask: (id) => {
-    const abortController = creationTaskAbortControllerMap.get(id);
-    if (!abortController) {
-      return;
-    }
-    abortController.abort();
-    creationTaskAbortControllerMap.delete(id);
-    set({
-      creationTasks: get().creationTasks.filter((v) => v.id !== id),
-    });
-  },
+        const abortController = new AbortController();
+        creationTaskAbortControllerMap.set(id, abortController);
+        set({
+          creationTasks: [
+            ...get().creationTasks,
+            {
+              id,
+              user,
+              filter,
+              status: 'waiting',
+              completeCount: 0,
+              skipCount: 0,
+            },
+          ],
+        });
+      },
+      removeCreationTask: (id) => {
+        const abortController = creationTaskAbortControllerMap.get(id);
+        if (!abortController) {
+          return;
+        }
+        abortController.abort();
+        creationTaskAbortControllerMap.delete(id);
+        set({
+          creationTasks: get().creationTasks.filter((v) => v.id !== id),
+        });
+      },
       updateCreationTask: (task) => {
         set({
           creationTasks: get().creationTasks.map((oldTask) => {
@@ -420,7 +423,9 @@ export const useDownloadStore = create<DownloadStore>()(
                 : t.error || '应用重启，任务已中断，可重新下载',
             post: {
               ...t.post,
-              createdAt: t.post?.createdAt ? dayjs(t.post.createdAt) : undefined,
+              createdAt: t.post?.createdAt
+                ? dayjs(t.post.createdAt)
+                : undefined,
             },
           }),
         );
@@ -433,6 +438,9 @@ export const useDownloadStore = create<DownloadStore>()(
 async function runCreationTask(task: CreationTask, abortSignal: AbortSignal) {
   log().info('Run creation task', task);
   const { filter, user } = task;
+
+  // 按博主轮换：每开始一个博主的批量任务切换到下一个可用账号
+  useAccountsStore.getState().noteBloggerStart();
 
   const { batchCreateDownloadTask, updateCreationTask } =
     useDownloadStore.getState();
@@ -454,7 +462,8 @@ async function runCreationTask(task: CreationTask, abortSignal: AbortSignal) {
 
   // 连续本地已存在文件计数，用于提前终止
   let consecutiveSkipCount = 0;
-  const consecutiveSkipThreshold = settings.download.consecutiveSkipThreshold || 0;
+  const consecutiveSkipThreshold =
+    settings.download.consecutiveSkipThreshold || 0;
 
   while (nextCursor !== null && now.isAfter(since)) {
     if (abortSignal.aborted) {
@@ -468,7 +477,7 @@ async function runCreationTask(task: CreationTask, abortSignal: AbortSignal) {
 
     // 每页之间延迟，避免触发 X API 速率限制
     if (nextCursor) {
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await new Promise((resolve) => setTimeout(resolve, 2000));
     }
     now = R.last(twitterPosts)?.createdAt || now;
     log().info('Now', now.format('YYYY-MM-DD'), 'next cursor', nextCursor);
@@ -550,8 +559,13 @@ async function runCreationTask(task: CreationTask, abortSignal: AbortSignal) {
       });
 
       // 检查连续跳过阈值，提前终止
-      if (consecutiveSkipThreshold > 0 && consecutiveSkipCount >= consecutiveSkipThreshold) {
-        log().info(`连续跳过 ${consecutiveSkipCount} 个文件，达到阈值 ${consecutiveSkipThreshold}，停止下载`);
+      if (
+        consecutiveSkipThreshold > 0 &&
+        consecutiveSkipCount >= consecutiveSkipThreshold
+      ) {
+        log().info(
+          `连续跳过 ${consecutiveSkipCount} 个文件，达到阈值 ${consecutiveSkipThreshold}，停止下载`,
+        );
         break;
       }
       continue;
