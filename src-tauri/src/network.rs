@@ -131,7 +131,16 @@ pub async fn network_fetch(
 
 #[tauri::command]
 pub async fn network_get_system_proxy_url() -> Result<HashMap<String, String>, ()> {
-    // 空实现：直接返回空代理列表，绕过旧版API的兼容性问题
-    Ok(HashMap::new())
+    // 读取操作系统代理设置（Windows 下为注册表 Internet Settings）。
+    // 未启用或读取失败时返回空 map，前端会视为"无系统代理"。
+    let mut map = HashMap::new();
+    if let Ok(proxy) = sysproxy::Sysproxy::get_system_proxy() {
+        if proxy.enable && !proxy.host.is_empty() {
+            let addr = format!("{}:{}", proxy.host, proxy.port);
+            map.insert("http".to_string(), addr.clone());
+            map.insert("https".to_string(), addr);
+        }
+    }
+    Ok(map)
 }
 

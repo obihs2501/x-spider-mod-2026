@@ -6,6 +6,7 @@ export function useResolvedProxyUrl() {
   const proxyConfig = useSettingsStore((state) => state.proxy);
 
   if (!proxyConfig.enable) return '';
-  if (proxyConfig.useSystem) return systemProxyUrl;
+  // 系统代理未开启（解析为空）时回退到手动地址，避免 aria2 拿到空代理直连失败
+  if (proxyConfig.useSystem) return systemProxyUrl || proxyConfig.url;
   return proxyConfig.url;
 }
