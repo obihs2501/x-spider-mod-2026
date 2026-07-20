@@ -26,8 +26,7 @@ export const About: React.FC = () => {
       <ul className="space-y-2 [&_a]:underline mt-4">
         <li>
           <strong>版本号：</strong>
-          <span>{PACKAGE_JSON_VERSION}</span>
-          （
+          <span>{PACKAGE_JSON_VERSION}</span>（
           <button
             onClick={async () => {
               setIsCheckingUpdate(true);

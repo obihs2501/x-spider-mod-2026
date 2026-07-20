@@ -57,6 +57,14 @@ export const useSettingsStore = create(
           state.accountRotation = DEFAULT_SETTINGS.accountRotation;
         }
 
+        // v4 新增日志级别与日志保留天数
+        if (version <= 3) {
+          state.app = {
+            ...DEFAULT_SETTINGS.app,
+            ...state.app,
+          };
+        }
+
         return state;
       },
     },

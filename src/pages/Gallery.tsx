@@ -61,9 +61,8 @@ const VideoTile: React.FC<{
   </button>
 );
 
-// 每个应用会话只做一次后台增量校验：重启后先展示持久化的文件夹列表，
-// 再通过 loadFolders 的 modifiedAt 对比静默同步磁盘变化，不清空已展示内容
-let revalidatedThisSession = false;
+// 画廊默认不自动刷新：只有从未扫描过或保存路径变化时才自动扫一次，
+// 其余时候仅在用户点「刷新」时做增量校验（modifiedAt 对比）
 
 export const Gallery: React.FC = () => {
   const { message } = App.useApp();
@@ -77,8 +76,8 @@ export const Gallery: React.FC = () => {
   const {
     folders,
     setFolders,
-    foldersLoaded,
     setFoldersLoaded,
+    setFoldersDir,
     currentFolder,
     setCurrentFolder,
     medias,
@@ -163,6 +162,7 @@ export const Gallery: React.FC = () => {
       });
       setFolders(result);
       setFoldersLoaded(true);
+      setFoldersDir(saveDirBase);
     } catch (err: any) {
       log.error(err);
       message.error(`读取目录失败：${err?.message || err}`);
@@ -174,6 +174,7 @@ export const Gallery: React.FC = () => {
     message,
     setFolders,
     setFoldersLoaded,
+    setFoldersDir,
     invalidateMediaCache,
   ]);
 
@@ -267,13 +268,31 @@ export const Gallery: React.FC = () => {
     ],
   );
 
-  // 首次进入扫描；重启后（持久化列表已展示）只做一次后台增量校验
+  // 默认不自动刷新：仅在从未扫描过、或保存路径发生变化时自动扫描一次。
+  // 等持久化状态恢复完成后再判断，避免启动瞬间误判为「未扫描过」而重扫。
   useEffect(() => {
-    if (!foldersLoaded || !revalidatedThisSession) {
-      revalidatedThisSession = true;
-      loadFolders();
-    }
-  }, [foldersLoaded, loadFolders]);
+    if (!saveDirBase) return;
+    let cancelled = false;
+    (async () => {
+      const persistApi = useGalleryStore.persist;
+      if (!persistApi.hasHydrated()) {
+        await new Promise<void>((resolve) => {
+          const unsub = persistApi.onFinishHydration(() => {
+            unsub();
+            resolve();
+          });
+        });
+      }
+      if (cancelled) return;
+      const state = useGalleryStore.getState();
+      if (!state.foldersLoaded || state.foldersDir !== saveDirBase) {
+        loadFolders();
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [saveDirBase, loadFolders]);
 
   const compareItems = useCallback(
     (

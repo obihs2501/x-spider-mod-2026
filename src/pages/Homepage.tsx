@@ -1,6 +1,6 @@
 /* eslint-disable react/prop-types */
 import { Avatar, Button, Collapse, Input, Space, App } from 'antd';
-import { ArrowLeftOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, ExportOutlined } from '@ant-design/icons';
 import React, { useRef, useState } from 'react';
 import { PageHeader } from '../components/PageHeader';
 import { PostListGridView } from '../components/homepage/PostListGridView';
@@ -232,17 +232,8 @@ export const Homepage: React.FC = () => {
                     用户信息加载完成，当前搜索用户：
                     {userInfo.data.name || '未知用户'}
                   </span>
-                  <a
-                    title="跳转到主页"
-                    className="flex items-center p-4 focus:outline !outline-4 !outline-cyan-200"
-                    href={
-                      userInfo.data.screenName
-                        ? buildUserUrl(userInfo.data.screenName)
-                        : 'javascript:void(0);'
-                    }
-                    target="_blank"
-                    rel="noreferrer"
-                  >
+                  {/* 卡片本身不再跳转网页，需要时用右侧显式链接打开 X */}
+                  <div className="flex items-center p-4">
                     <div>
                       <Avatar src={userInfo.data.avatar} size={50} alt="头像" />
                     </div>
@@ -259,7 +250,18 @@ export const Homepage: React.FC = () => {
                         </p>
                       ) : undefined}
                     </div>
-                  </a>
+                    {userInfo.data.screenName && (
+                      <a
+                        className="ml-auto shrink-0 text-sm"
+                        title="在浏览器中打开 X 主页"
+                        href={buildUserUrl(userInfo.data.screenName)}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        在 X 上打开 <ExportOutlined aria-hidden />
+                      </a>
+                    )}
+                  </div>
                 </section>
               )}
             </>

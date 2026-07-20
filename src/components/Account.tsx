@@ -66,7 +66,7 @@ const AccountStatusTags: React.FC<{ account: XAccount; active: boolean }> = ({
   const rateLimited = account.rateLimitedUntil > Date.now();
   return (
     <span className="ml-1">
-      {active && <Tag color="success">当前</Tag>}
+      {active && <Tag color="success">使用中</Tag>}
       {!account.enabled && <Tag>已停用</Tag>}
       {rateLimited && (
         <Tag color="warning">
@@ -81,6 +81,7 @@ export const Account: React.FC = () => {
   const {
     accounts,
     activeAccountId,
+    displayAccountId,
     addAccount,
     removeAccount,
     updateAccount,
@@ -88,6 +89,7 @@ export const Account: React.FC = () => {
   } = useAccountsStore((s) => ({
     accounts: s.accounts,
     activeAccountId: s.activeAccountId,
+    displayAccountId: s.displayAccountId,
     addAccount: s.addAccount,
     removeAccount: s.removeAccount,
     updateAccount: s.updateAccount,
@@ -99,16 +101,20 @@ export const Account: React.FC = () => {
   const [form] = useForm();
   const { message } = App.useApp();
 
-  const activeAccount =
-    accounts.find((a) => a.id === activeAccountId) || accounts[0] || null;
+  // 左上角固定展示手动选择的账号；自动轮换只在后台切换请求所用账号
+  const displayAccount =
+    accounts.find((a) => a.id === displayAccountId) ||
+    accounts.find((a) => a.id === activeAccountId) ||
+    accounts[0] ||
+    null;
 
-  // 为缺少资料的当前账号补拉 screenName / 头像（如旧版迁移进来的账号）
+  // 为缺少资料的展示账号补拉 screenName / 头像（如旧版迁移进来的账号）
   useEffect(() => {
     (async () => {
-      if (!activeAccount || activeAccount.screenName) return;
+      if (!displayAccount || displayAccount.screenName) return;
       try {
-        const info = await getAccountInfo(activeAccount.cookieString);
-        updateAccount(activeAccount.id, {
+        const info = await getAccountInfo(displayAccount.cookieString);
+        updateAccount(displayAccount.id, {
           screenName: info.screenName,
           avatar: info.avatar,
         });
@@ -116,7 +122,7 @@ export const Account: React.FC = () => {
         log.error('Fetch account info failed', err);
       }
     })();
-  }, [activeAccount?.id, activeAccount?.screenName]);
+  }, [displayAccount?.id, displayAccount?.screenName]);
 
   const onAddFormFinished = async (values: any) => {
     setAddLoading(true);
@@ -152,7 +158,7 @@ export const Account: React.FC = () => {
           aria-label="个人信息"
           className="flex flex-col justify-center items-center border-b-[1px] py-6 border-[#E8E6DC]"
         >
-          {!activeAccount && (
+          {!displayAccount && (
             <>
               <button
                 className="bg-transparent"
@@ -165,25 +171,25 @@ export const Account: React.FC = () => {
               </span>
             </>
           )}
-          {activeAccount && (
+          {displayAccount && (
             <>
               <span className="sr-only" role="alert">
-                账号 {activeAccount.screenName || '未知'} 已登录
+                账号 {displayAccount.screenName || '未知'} 已登录
               </span>
               <a
                 className="focus:outline !outline-4 !outline-black"
                 title="前往个人主页"
                 aria-label="前往个人主页"
                 target="_blank"
-                href={`https://twitter.com/${activeAccount.screenName || ''}`}
+                href={`https://twitter.com/${displayAccount.screenName || ''}`}
                 rel="noreferrer"
               >
-                <Avatar size={50} src={activeAccount.avatar} alt="头像">
-                  {activeAccount.screenName?.[0] || '?'}
+                <Avatar size={50} src={displayAccount.avatar} alt="头像">
+                  {displayAccount.screenName?.[0] || '?'}
                 </Avatar>
               </a>
               <div className="text-[#3D3929] mt-1 font-bold">
-                {activeAccount.screenName || '加载中…'}
+                {displayAccount.screenName || '加载中…'}
               </div>
             </>
           )}
@@ -206,7 +212,8 @@ export const Account: React.FC = () => {
       >
         <p className="text-ant-color-text-secondary text-xs mb-2">
           多账号轮换可降低单账号的请求频率与风控风险。轮换策略可在「设置 →
-          账号轮换」中调整；收到 429 限流时会自动切换到下一个可用账号。
+          账号轮换」中调整；收到 429
+          限流时会自动切换到下一个可用账号。自动轮换只在后台切换请求所用账号（标「使用中」），左上角始终显示你手动选择的账号。
         </p>
         <List
           dataSource={accounts}

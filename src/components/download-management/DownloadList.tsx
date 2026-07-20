@@ -64,9 +64,7 @@ export const DownloadList: React.FC<DownloadListProps> = ({
   const tasks = useMemo(() => {
     const filtered = filterTasks(downloadTasks);
     if (!bloggerFilter) return filtered;
-    return filtered.filter(
-      (t) => t.post?.user?.screenName === bloggerFilter,
-    );
+    return filtered.filter((t) => t.post?.user?.screenName === bloggerFilter);
   }, [downloadTasks, filterTasks, bloggerFilter]);
 
   // 当前分类下出现过的博主列表（用于筛选）

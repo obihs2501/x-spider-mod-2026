@@ -6,6 +6,79 @@ import { useSettingsStore } from '../stores/settings';
 
 const DEFAULT_CATEGORY = 'APP';
 
+// 日志级别严重度：数值越小越重要；输出时低于设置级别的日志会被过滤
+const LEVEL_SEVERITY: Record<string, number> = {
+  ERROR: 0,
+  WARN: 1,
+  INFO: 2,
+  DEBUG: 3,
+};
+
+function isLevelEnabled(level: string): boolean {
+  const configured = (
+    useSettingsStore.getState().app.logLevel || 'info'
+  ).toUpperCase();
+  return (LEVEL_SEVERITY[level] ?? 2) <= (LEVEL_SEVERITY[configured] ?? 2);
+}
+
+/** 从日志文件名（YYYY-MM-DD HHmmss.log）解析出创建时间戳 */
+function parseLogFileStamp(fileName: string): number | null {
+  const m = fileName.match(
+    /^(\d{4})-(\d{2})-(\d{2}) (\d{2})(\d{2})(\d{2})\.log$/,
+  );
+  if (!m) return null;
+  const ts = new Date(
+    Number(m[1]),
+    Number(m[2]) - 1,
+    Number(m[3]),
+    Number(m[4]),
+    Number(m[5]),
+    Number(m[6]),
+  ).getTime();
+  return Number.isNaN(ts) ? null : ts;
+}
+
+/**
+ * 清理过期日志文件（按文件名里的日期判断）。
+ * 保留天数取设置 app.logRetentionDays，0 表示不清理；等待设置加载完成后执行。
+ */
+export async function cleanupOldLogs() {
+  const persistApi = useSettingsStore.persist;
+  if (!persistApi.hasHydrated()) {
+    await new Promise<void>((resolve) => {
+      const unsub = persistApi.onFinishHydration(() => {
+        unsub();
+        resolve();
+      });
+    });
+  }
+
+  const days = Number(useSettingsStore.getState().app.logRetentionDays);
+  if (!days || days <= 0 || Number.isNaN(days)) return;
+
+  const logDir = await path.appLogDir();
+  if (!(await fs.exists(logDir))) return;
+
+  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+  const entries = await fs.readDir(logDir);
+  let removed = 0;
+  for (const entry of entries) {
+    const stamp = parseLogFileStamp(entry.name || '');
+    if (stamp === null || stamp >= cutoff) continue;
+    try {
+      await fs.removeFile(entry.path);
+      removed++;
+    } catch (err) {
+      console.warn('Remove expired log file failed', entry.name, err);
+    }
+  }
+  if (removed > 0) {
+    window.log.info(
+      `Cleaned ${removed} expired log file(s), retention ${days} day(s)`,
+    );
+  }
+}
+
 export class Logger implements ILogger {
   #now = dayjs();
   #logFileBuffers: string[] = [];
@@ -21,9 +94,7 @@ export class Logger implements ILogger {
     this.#log('ERROR', DEFAULT_CATEGORY, ...messages);
   }
   debug(...messages: any[]) {
-    if (import.meta.env.DEV) {
-      this.#log('DEBUG', DEFAULT_CATEGORY, ...messages);
-    }
+    this.#log('DEBUG', DEFAULT_CATEGORY, ...messages);
   }
   category(name: string): ICategoriedLogger {
     return {
@@ -37,9 +108,7 @@ export class Logger implements ILogger {
         this.#log('ERROR', name, ...messages);
       },
       debug: (...messages: any[]) => {
-        if (import.meta.env.DEV) {
-          this.#log('DEBUG', name, ...messages);
-        }
+        this.#log('DEBUG', name, ...messages);
       },
     };
   }
@@ -57,6 +126,7 @@ export class Logger implements ILogger {
 
   #log(level: string, category: string, ...messages: any[]) {
     try {
+      if (!isLevelEnabled(level)) return;
       const time = dayjs();
       this.#logConsole(level, time, category, ...messages);
 

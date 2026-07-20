@@ -24,6 +24,9 @@ export interface GalleryStore {
   setFolders: (folders: GalleryFolder[]) => void;
   foldersLoaded: boolean;
   setFoldersLoaded: (v: boolean) => void;
+  /** folders 列表对应的保存路径；保存路径变化时才需要自动重扫 */
+  foldersDir: string;
+  setFoldersDir: (dir: string) => void;
 
   currentFolder: GalleryFolder | null;
   setCurrentFolder: (f: GalleryFolder | null) => void;
@@ -61,6 +64,8 @@ export const useGalleryStore = create<GalleryStore>()(
       setFolders: (folders) => set({ folders }),
       foldersLoaded: false,
       setFoldersLoaded: (v) => set({ foldersLoaded: v }),
+      foldersDir: '',
+      setFoldersDir: (dir) => set({ foldersDir: dir }),
 
       currentFolder: null,
       setCurrentFolder: (f) => set({ currentFolder: f }),
@@ -106,10 +111,11 @@ export const useGalleryStore = create<GalleryStore>()(
       partialize: (state) =>
         ({
           // 持久化文件夹摘要，重启后画廊直接展示上次的列表，
-          // 由页面在每个会话首次进入时后台增量校验（modifiedAt 对比）。
+          // 默认不自动重扫，只有手动点「刷新」时增量校验（modifiedAt 对比）。
           // mediaCache 可能很大且 persist 每次 set 都全量写盘，故不持久化。
           folders: state.folders,
           foldersLoaded: state.foldersLoaded,
+          foldersDir: state.foldersDir,
           columns: state.columns,
           fitMode: state.fitMode,
           viewMode: state.viewMode,

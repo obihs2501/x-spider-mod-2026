@@ -17,6 +17,7 @@ import { getUserMedias, getUserTweets } from '../twitter/api';
 import { useSettingsStore } from './settings';
 import { useAccountsStore } from './accounts';
 import { getDownloadUrl } from '../twitter/utils';
+import { resolveBloggerDirName } from '../utils/blogger-dir';
 import { resolveVariables } from '../utils/file-name-template';
 import { FileNameTemplateData } from '../interfaces/FileNameTemplateData';
 import dayjs from 'dayjs';
@@ -70,7 +71,12 @@ async function prepareDownloadTask({
   const dirTemplate =
     settings.download.dirTemplate?.trim() ||
     '%USER_NAME% (@%USER_SCREEN_NAME%)';
-  const dirName = resolveVariables(dirTemplate, templateData);
+  // 博主改名时按 (@screenName) 标记沿用已有文件夹，避免同一博主分散到多个文件夹
+  const dirName = await resolveBloggerDirName(
+    settings.download.saveDirBase,
+    post.user?.screenName || '',
+    resolveVariables(dirTemplate, templateData),
+  );
   const dir = await path.join(settings.download.saveDirBase, dirName);
 
   log().info('resolved dirName', dirName);

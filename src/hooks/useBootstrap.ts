@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { aria2 } from '../utils/aria2';
+import { cleanupOldLogs } from '../utils/log';
 
 export function useBootstrap() {
   const [ready, setReady] = useState(false);
@@ -7,6 +8,11 @@ export function useBootstrap() {
 
   useEffect(() => {
     (async () => {
+      // 后台清理过期日志，不阻塞启动
+      cleanupOldLogs().catch((err) => {
+        log.error('Cleanup old logs failed', err);
+      });
+
       interface BootConfig {
         name: string;
         fn: () => Promise<void>;

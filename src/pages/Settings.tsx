@@ -204,6 +204,36 @@ export const Settings: React.FC = () => {
         >
           <Switch />
         </Item>
+        <Item
+          label="日志级别"
+          settingKey="logLevel"
+          description="控制台与日志文件只输出不低于所选级别的日志：「错误」最少，「调试」最详细。"
+        >
+          <Radio.Group
+            options={[
+              { label: '错误', value: 'error' },
+              { label: '警告', value: 'warn' },
+              { label: '信息', value: 'info' },
+              { label: '调试', value: 'debug' },
+            ]}
+            optionType="button"
+            buttonStyle="solid"
+          />
+        </Item>
+        <Item
+          label="日志保留天数"
+          settingKey="logRetentionDays"
+          description="启动时自动删除早于保留天数的日志文件，填 0 表示不自动清理。"
+          validator={(value) => {
+            return Joi.number()
+              .integer()
+              .min(0)
+              .message('请输入 0 或正整数')
+              .validate(value).error?.message;
+          }}
+        >
+          <Input type="number" min={0} placeholder="默认：7（0 为不清理）" />
+        </Item>
         <Button
           onClick={async () => {
             await showInFolder(await path.appLogDir());

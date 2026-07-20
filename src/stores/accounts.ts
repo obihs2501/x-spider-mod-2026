@@ -19,6 +19,8 @@ export interface XAccount {
 export interface AccountsStore {
   accounts: XAccount[];
   activeAccountId: string;
+  /** 左上角展示的账号（手动选择）；自动轮换只改 activeAccountId，不改它 */
+  displayAccountId: string;
 
   addAccount: (
     cookieString: string,
@@ -26,7 +28,10 @@ export interface AccountsStore {
   ) => XAccount;
   removeAccount: (id: string) => void;
   updateAccount: (id: string, patch: Partial<Omit<XAccount, 'id'>>) => void;
+  /** 手动切换当前账号：同时更新轮换游标与左上角展示 */
   setActiveAccountId: (id: string) => void;
+  /** 内部：自动轮换切换游标，不改变左上角展示账号 */
+  setRotationAccountId: (id: string) => void;
 
   /** 当前可用（启用且未在限流冷却中）的账号列表 */
   getAvailableAccounts: () => XAccount[];
@@ -56,6 +61,7 @@ export const useAccountsStore = create(
     (set, get) => ({
       accounts: [],
       activeAccountId: '',
+      displayAccountId: '',
 
       addAccount: (cookieString, info) => {
         const account: XAccount = {
@@ -71,6 +77,7 @@ export const useAccountsStore = create(
         set({
           accounts,
           activeAccountId: get().activeAccountId || account.id,
+          displayAccountId: get().displayAccountId || account.id,
         });
         log().info('Account added', account.screenName || account.id);
         return account;
@@ -81,6 +88,9 @@ export const useAccountsStore = create(
         const patch: Partial<AccountsStore> = { accounts };
         if (get().activeAccountId === id) {
           patch.activeAccountId = accounts.find((a) => a.enabled)?.id || '';
+        }
+        if (get().displayAccountId === id) {
+          patch.displayAccountId = accounts.find((a) => a.enabled)?.id || '';
         }
         set(patch as any);
       },
@@ -94,6 +104,11 @@ export const useAccountsStore = create(
       },
 
       setActiveAccountId: (id) => {
+        requestCount = 0;
+        set({ activeAccountId: id, displayAccountId: id });
+      },
+
+      setRotationAccountId: (id) => {
         requestCount = 0;
         set({ activeAccountId: id });
       },
@@ -112,7 +127,7 @@ export const useAccountsStore = create(
         if (active) return active;
         // 当前账号不可用（被删/禁用/限流），自动顺延
         const next = available[0];
-        get().setActiveAccountId(next.id);
+        get().setRotationAccountId(next.id);
         log().info('Active account unavailable, fallback to', next.screenName);
         return next;
       },
@@ -131,7 +146,7 @@ export const useAccountsStore = create(
         for (let step = 1; step <= accounts.length; step++) {
           const candidate = accounts[(currentIndex + step) % accounts.length];
           if (available.some((a) => a.id === candidate.id)) {
-            get().setActiveAccountId(candidate.id);
+            get().setRotationAccountId(candidate.id);
             log().info(
               `Rotate account (${reason}):`,
               candidate.screenName || candidate.id,
@@ -180,11 +195,20 @@ export const useAccountsStore = create(
         ({
           accounts: s.accounts,
           activeAccountId: s.activeAccountId,
+          displayAccountId: s.displayAccountId,
         }) as AccountsStore,
       onRehydrateStorage: () => {
         return async (state, error) => {
           if (error) return;
-          if (state?.accounts?.length) return;
+          if (state?.accounts?.length) {
+            // 旧版本没有 displayAccountId：用当前轮换游标补齐
+            if (!state.displayAccountId) {
+              useAccountsStore.setState({
+                displayAccountId: state.activeAccountId || state.accounts[0].id,
+              });
+            }
+            return;
+          }
 
           // 旧版单账号迁移：把 app-state 里的 cookieString 导入账号池
           const appStatePersist = useAppStateStore.persist;

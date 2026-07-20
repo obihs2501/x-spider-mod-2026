@@ -1,5 +1,6 @@
 /* eslint-disable react/prop-types */
 import { LoadingOutlined } from '@ant-design/icons';
+import { fs, tauri } from '@tauri-apps/api';
 import { App, Image } from 'antd';
 import dayjs from 'dayjs';
 import * as R from 'ramda';
@@ -14,6 +15,8 @@ import { InfiniteScroll } from '../InfiniteScroll';
 import { GridViewItemAction, GridViewItemActions } from './GridViewItemActions';
 import { VideoPreviewModal } from '../media/VideoPreviewModal';
 import { getDownloadUrl } from '../../twitter/utils';
+import { AriaStatus } from '../../utils/aria2';
+import { buildLocalMediaPathMap } from '../../utils/local-media';
 
 export const PostListGridView: React.FC = () => {
   const { message } = App.useApp();
@@ -28,6 +31,16 @@ export const PostListGridView: React.FC = () => {
   }));
   const createDownloadTask = useDownloadStore(
     (state) => state.createDownloadTask,
+  );
+  // 只订阅已完成任务数，避免下载进度每 500ms 更新导致整个网格重渲染
+  const completedCount = useDownloadStore(
+    (s) =>
+      s.downloadTasks.filter((t) => t.status === AriaStatus.Complete).length,
+  );
+  // 已完成下载的媒体 → 本地文件路径；预览时优先加载本地文件
+  const localPathMap = useMemo(
+    () => buildLocalMediaPathMap(useDownloadStore.getState().downloadTasks),
+    [completedCount],
   );
 
   const mediaList = useMemo<(TwitterMedia & { postId: string })[]>(
@@ -91,6 +104,7 @@ export const PostListGridView: React.FC = () => {
       )}
       <ul className="grid grid-cols-[repeat(auto-fill,minmax(12rem,1fr))] gap-2">
         {mediaList.map((media) => {
+          const localPath = media.id ? localPathMap.get(media.id) : undefined;
           const actionOpen: GridViewItemAction | undefined = userInfo.data
             ?.screenName
             ? {
@@ -117,9 +131,18 @@ export const PostListGridView: React.FC = () => {
 
           const actionPreview: GridViewItemAction = {
             name: media.type === MediaType.Photo ? '预览图片' : '预览视频',
-            onClick: () => {
+            onClick: async () => {
               try {
+                // 已下载的媒体优先加载本地文件，避免重复请求网络
+                let localSrc: string | undefined;
+                if (localPath && (await fs.exists(localPath))) {
+                  localSrc = tauri.convertFileSrc(localPath);
+                }
                 if (media.type === MediaType.Photo) {
+                  if (localSrc) {
+                    setImagePreview(localSrc);
+                    return;
+                  }
                   if (!media.url) {
                     message.warning('该图片没有预览链接');
                     return;
@@ -130,7 +153,7 @@ export const PostListGridView: React.FC = () => {
                   setImagePreview(url.href);
                   return;
                 }
-                const src = getDownloadUrl(media);
+                const src = localSrc || getDownloadUrl(media);
                 setVideoPreview({ src, title: media.id || '视频预览' });
               } catch (err: any) {
                 log.error(err);
@@ -154,6 +177,24 @@ export const PostListGridView: React.FC = () => {
             onClick: commonDownload,
           };
 
+          const networkThumb = media.url
+            ? (() => {
+                try {
+                  const url = new URL(media.url);
+                  url.searchParams.set('format', 'jpg');
+                  url.searchParams.set('name', 'small');
+                  return url.href;
+                } catch {
+                  return media.url;
+                }
+              })()
+            : undefined;
+          // 已下载的图片缩略图直接用本地文件；视频仍用网络封面图
+          const thumbSrc =
+            media.type === MediaType.Photo && localPath
+              ? tauri.convertFileSrc(localPath)
+              : networkThumb;
+
           return (
             <li
               tabIndex={0}
@@ -163,23 +204,23 @@ export const PostListGridView: React.FC = () => {
               <div className="h-full">
                 <img
                   alt="推文图片"
-                  src={
-                    media.url
-                      ? (() => {
-                          try {
-                            const url = new URL(media.url);
-                            url.searchParams.set('format', 'jpg');
-                            url.searchParams.set('name', 'small');
-                            return url.href;
-                          } catch {
-                            return media.url;
-                          }
-                        })()
-                      : undefined
-                  }
+                  src={thumbSrc}
+                  onError={(e) => {
+                    // 本地文件缺失时回退到网络缩略图
+                    const img = e.currentTarget;
+                    if (networkThumb && img.dataset.fallback !== '1') {
+                      img.dataset.fallback = '1';
+                      img.src = networkThumb;
+                    }
+                  }}
                   loading="lazy"
                   className="object-cover w-full h-full transform transition-transform group-hover:scale-105"
                 />
+                {localPath && (
+                  <span className="block absolute left-2 top-2 text-white bg-[rgba(82,196,26,0.9)] rounded-sm px-[0.3rem] text-sm pointer-events-none">
+                    已下载
+                  </span>
+                )}
                 {media.type === MediaType.Video && (
                   <span className="block absolute right-2 bottom-2 text-white bg-[rgba(0,0,0,0.6)] rounded-sm px-[0.3rem] text-sm">
                     <span className="sr-only">视频时长：</span>

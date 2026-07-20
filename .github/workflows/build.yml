@@ -79,5 +79,5 @@ jobs:
           TAG="v${VERSION}-build.${GITHUB_RUN_NUMBER}"
           gh release create "$TAG" ./src-tauri/target/release/bundle/nsis/* \
             --title "$TAG" \
-            --notes "自动构建版本。新增：免登录（游客令牌）下载公开账号原画质媒体、单条帖子链接解析下载。" \
+            --notes "自动构建版本。本次更新：博主改名后下载沿用旧文件夹；日志级别可选与过期日志自动清理；画廊改为手动增量刷新；账号轮换不再频繁刷新左上角；主页/帖子预览优先加载本地已下载媒体。" \
             --latest
