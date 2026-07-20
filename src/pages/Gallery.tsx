@@ -590,7 +590,57 @@ export const Gallery: React.FC = () => {
                   })}
                 </div>
               ) : (
-                <Image.PreviewGroup>
+                <Image.PreviewGroup
+                  preview={{
+                    toolbarRender: (
+                      _,
+                      {
+                        actions: {
+                          onFlipY,
+                          onFlipX,
+                          onRotateLeft,
+                          onRotateRight,
+                          onZoomOut,
+                          onZoomIn,
+                        },
+                        current,
+                      },
+                    ) => {
+                      const currentMedia = visibleMedias[current];
+                      return (
+                        <div className="flex gap-2 items-center">
+                          <Button
+                            size="small"
+                            icon={<FolderOpenOutlined />}
+                            onClick={() => {
+                              if (currentMedia) shell.open(currentMedia.path);
+                            }}
+                          >
+                            打开
+                          </Button>
+                          <Button size="small" onClick={onFlipY}>
+                            垂直翻转
+                          </Button>
+                          <Button size="small" onClick={onFlipX}>
+                            水平翻转
+                          </Button>
+                          <Button size="small" onClick={onRotateLeft}>
+                            左转
+                          </Button>
+                          <Button size="small" onClick={onRotateRight}>
+                            右转
+                          </Button>
+                          <Button size="small" onClick={onZoomOut}>
+                            缩小
+                          </Button>
+                          <Button size="small" onClick={onZoomIn}>
+                            放大
+                          </Button>
+                        </div>
+                      );
+                    },
+                  }}
+                >
                   <div
                     className={`grid ${COLUMN_CLASS[columns] || 'grid-cols-5'} gap-2`}
                   >

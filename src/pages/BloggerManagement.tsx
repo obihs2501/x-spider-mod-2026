@@ -5,6 +5,7 @@ import {
   FolderOpenOutlined,
   ImportOutlined,
   SearchOutlined,
+  AppstoreOutlined,
 } from '@ant-design/icons';
 import { fs, shell } from '@tauri-apps/api';
 import {
@@ -148,6 +149,17 @@ export const BloggerManagement: React.FC = () => {
     await shell.open(directoryPath);
   };
 
+  const openInGallery = async (b: BloggerRecord) => {
+    const directoryPath = bloggerStats[b.screenName]?.directoryPath;
+    if (!directoryPath || !(await fs.exists(directoryPath))) {
+      message.warning('未找到该博主的本地文件夹，请先导入本地已下载内容');
+      return;
+    }
+    const galleryRoute = ROUTES.find((r) => r.id === 'gallery');
+    if (galleryRoute) setRoute(galleryRoute);
+    // 画廊会自动加载 saveDirBase 并扫描子文件夹
+  };
+
   const gotoHomepage = async (screenName: string) => {
     setHomepageLoading(screenName);
     resetToInitial();
@@ -273,12 +285,22 @@ export const BloggerManagement: React.FC = () => {
                 <List.Item
                   actions={[
                     <Button
+                      key="gallery"
+                      size="small"
+                      icon={<AppstoreOutlined />}
+                      onClick={() => openInGallery(b)}
+                      title="在画廊查看"
+                    >
+                      画廊查看
+                    </Button>,
+                    <Button
                       key="folder"
                       size="small"
                       icon={<FolderOpenOutlined />}
                       onClick={() => openLocalFolder(b)}
+                      title="用文件管理器打开"
                     >
-                      打开文件夹
+                      本地文件夹
                     </Button>,
                     <Button
                       key="inc"
