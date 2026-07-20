@@ -67,6 +67,9 @@ export const DownloadList: React.FC<DownloadListProps> = ({
     return filtered.filter((t) => t.post?.user?.screenName === bloggerFilter);
   }, [downloadTasks, filterTasks, bloggerFilter]);
 
+  const tasksRef = useRef(tasks);
+  tasksRef.current = tasks;
+
   // 当前分类下出现过的博主列表（用于筛选）
   const bloggers = useMemo(() => {
     const map = new Map<string, string>();
@@ -119,8 +122,8 @@ export const DownloadList: React.FC<DownloadListProps> = ({
   return (
     <div className="flex flex-col grow h-full overflow-hidden pb-4">
       <CreationTasks />
-      <section className="flex items-center gap-3 flex-wrap">
-        <span>共 {tasks.length} 个下载任务。</span>
+      <section className="flex items-center gap-3 flex-wrap sticky top-0 bg-[#F7F4EF] z-10 py-2">
+        <span>共 {tasksRef.current.length} 个下载任务。</span>
         <Select
           allowClear
           showSearch
@@ -133,7 +136,7 @@ export const DownloadList: React.FC<DownloadListProps> = ({
           optionFilterProp="label"
         />
       </section>
-      <ul className="flex space-x-2 mt-3">
+      <ul className="flex space-x-2 mt-3 sticky top-[52px] bg-[#F7F4EF] z-10 pb-2">
         {batchActions?.includes('unpauseAll') && (
           <li>
             <Button onClick={unpauseAll} disabled={tasks.length === 0}>

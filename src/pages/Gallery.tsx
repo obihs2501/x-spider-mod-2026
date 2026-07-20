@@ -71,6 +71,7 @@ export const Gallery: React.FC = () => {
   const [videoPreview, setVideoPreview] = useState<{
     src: string;
     title: string;
+    path: string;
   } | null>(null);
   const openFolderTokenRef = useRef(0);
   const {
@@ -555,7 +556,11 @@ export const Gallery: React.FC = () => {
                             <VideoTile
                               name={m.name}
                               onPreview={() =>
-                                setVideoPreview({ src, title: m.name })
+                                setVideoPreview({
+                                  src,
+                                  title: m.name,
+                                  path: m.path,
+                                })
                               }
                             />
                           ) : (
@@ -601,7 +606,11 @@ export const Gallery: React.FC = () => {
                             <VideoTile
                               name={m.name}
                               onPreview={() =>
-                                setVideoPreview({ src, title: m.name })
+                                setVideoPreview({
+                                  src,
+                                  title: m.name,
+                                  path: m.path,
+                                })
                               }
                             />
                           ) : (
@@ -614,6 +623,16 @@ export const Gallery: React.FC = () => {
                               style={{ objectFit: fitMode, height: '100%' }}
                             />
                           )}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              shell.open(m.path);
+                            }}
+                            title="用默认程序打开"
+                            className="absolute right-1 top-1 bg-black/70 hover:bg-black/90 text-white text-xs px-2 py-0.5 rounded transition-colors z-10"
+                          >
+                            打开
+                          </button>
                           <span className="absolute left-1 bottom-1 right-1 truncate bg-black/60 text-white text-[10px] px-1 rounded pointer-events-none">
                             {m.name}
                           </span>
@@ -642,6 +661,7 @@ export const Gallery: React.FC = () => {
         open={!!videoPreview}
         src={videoPreview?.src}
         title={videoPreview?.title}
+        filePath={videoPreview?.path}
         onClose={() => setVideoPreview(null)}
       />
     </div>

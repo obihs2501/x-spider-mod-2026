@@ -278,7 +278,7 @@ export const BloggerManagement: React.FC = () => {
                       icon={<FolderOpenOutlined />}
                       onClick={() => openLocalFolder(b)}
                     >
-                      本地文件夹
+                      打开文件夹
                     </Button>,
                     <Button
                       key="inc"

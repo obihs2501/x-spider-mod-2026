@@ -30,6 +30,9 @@ export interface GalleryStore {
 
   currentFolder: GalleryFolder | null;
   setCurrentFolder: (f: GalleryFolder | null) => void;
+  /** 其他页面（如博主管理）请求画廊打开的文件夹路径，进入画廊后消费并清空 */
+  pendingOpenPath: string | null;
+  setPendingOpenPath: (p: string | null) => void;
   medias: GalleryMedia[];
   setMedias: (m: GalleryMedia[]) => void;
   mediaCache: Record<string, GalleryMedia[]>;
@@ -69,6 +72,8 @@ export const useGalleryStore = create<GalleryStore>()(
 
       currentFolder: null,
       setCurrentFolder: (f) => set({ currentFolder: f }),
+      pendingOpenPath: null,
+      setPendingOpenPath: (p) => set({ pendingOpenPath: p }),
       medias: [],
       setMedias: (m) => set({ medias: m }),
       mediaCache: {},
