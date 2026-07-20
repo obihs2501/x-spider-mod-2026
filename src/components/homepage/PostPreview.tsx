@@ -8,17 +8,12 @@ import {
   PlayCircleFilled,
   RetweetOutlined,
 } from '@ant-design/icons';
-import { fs, tauri } from '@tauri-apps/api';
 import { Avatar, Button, Image, Tag } from 'antd';
 import clsx from 'clsx';
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import MediaType from '../../enums/MediaType';
 import { TwitterPost } from '../../interfaces/TwitterPost';
-import { useDownloadStore } from '../../stores/download';
-import { buildPostUrl } from '../../twitter/url';
-import { getDownloadUrl } from '../../twitter/utils';
-import { buildLocalMediaPathMap } from '../../utils/local-media';
-import { VideoPreviewModal } from '../media/VideoPreviewModal';
+import { buildPostUrl, buildUserUrl } from '../../twitter/url';
 
 export interface PostPreviewProps {
   post: TwitterPost;
@@ -41,7 +36,7 @@ function formatCount(n?: number): string {
 
 /**
  * 仿 X 界面的单条帖子预览卡片：展示头像、昵称、正文、媒体与互动数据。
- * 已下载的媒体优先加载本地文件；跳转 X 网页仅保留底部的显式链接。
+ * 纯文字帖子也可展示；媒体下载由用户点击按钮手动触发。
  */
 export const PostPreview: React.FC<PostPreviewProps> = ({
   post,
@@ -51,31 +46,6 @@ export const PostPreview: React.FC<PostPreviewProps> = ({
 }) => {
   const medias = post.medias || [];
   const text = cleanFullText(post.fullText);
-  // media.id → 已验证存在的本地文件路径
-  const [localPaths, setLocalPaths] = useState<Record<string, string>>({});
-  const [videoPreview, setVideoPreview] = useState<{
-    src: string;
-    title: string;
-  } | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const map = buildLocalMediaPathMap(
-        useDownloadStore.getState().downloadTasks,
-      );
-      const result: Record<string, string> = {};
-      for (const media of post.medias || []) {
-        if (!media.id) continue;
-        const p = map.get(media.id);
-        if (p && (await fs.exists(p))) result[media.id] = p;
-      }
-      if (!cancelled) setLocalPaths(result);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [post]);
 
   return (
     <section
@@ -93,8 +63,18 @@ export const PostPreview: React.FC<PostPreviewProps> = ({
           className="!absolute right-2 top-2 z-10"
         />
       )}
-      {/* 头部：头像 + 昵称 + 用户名（不再隐式跳转网页） */}
-      <div className="flex items-center">
+      {/* 头部：头像 + 昵称 + 用户名 */}
+      <a
+        className="flex items-center"
+        href={
+          post.user.screenName
+            ? buildUserUrl(post.user.screenName)
+            : 'javascript:void(0);'
+        }
+        target="_blank"
+        rel="noreferrer"
+        title="跳转到用户主页"
+      >
         <Avatar src={post.user.avatar} size={44} alt="头像" />
         <div className="ml-3 leading-tight">
           <p className="font-bold text-[15px]">
@@ -102,7 +82,7 @@ export const PostPreview: React.FC<PostPreviewProps> = ({
           </p>
           <p className="text-gray-500 text-sm">@{post.user.screenName}</p>
         </div>
-      </div>
+      </a>
 
       {/* 正文（可选中复制） */}
       {text && (
@@ -122,7 +102,7 @@ export const PostPreview: React.FC<PostPreviewProps> = ({
         </div>
       )}
 
-      {/* 媒体网格：图片点击放大（本地优先），视频点击应用内播放（本地优先） */}
+      {/* 媒体网格（点击可放大原图） */}
       {medias.length > 0 && (
         <Image.PreviewGroup>
           <div
@@ -131,68 +111,31 @@ export const PostPreview: React.FC<PostPreviewProps> = ({
               medias.length === 1 ? 'grid-cols-1' : 'grid-cols-2',
             )}
           >
-            {medias.map((media, index) => {
-              const localPath = media.id ? localPaths[media.id] : undefined;
-              const localSrc = localPath
-                ? tauri.convertFileSrc(localPath)
-                : undefined;
-              const posterSrc = `${media.url}?format=jpg&name=small`;
-              return (
-                <div key={media.id || index} className="relative">
-                  {media.type === MediaType.Photo ? (
-                    <Image
-                      src={localSrc || posterSrc}
-                      preview={{
-                        src: localSrc || `${media.url}?format=jpg&name=orig`,
-                      }}
-                      alt={`媒体 p${index}`}
-                      width="100%"
-                      style={{
-                        objectFit: 'cover',
-                        maxHeight: 420,
-                        width: '100%',
-                      }}
-                    />
-                  ) : (
-                    <button
-                      type="button"
-                      className="block w-full bg-transparent p-0"
-                      title="播放视频"
-                      onClick={() => {
-                        try {
-                          setVideoPreview({
-                            src: localSrc || getDownloadUrl(media),
-                            title: media.id || '视频预览',
-                          });
-                        } catch (err) {
-                          log.error(err);
-                        }
-                      }}
-                    >
-                      <img
-                        src={posterSrc}
-                        alt={`媒体 p${index}`}
-                        className="w-full object-cover"
-                        style={{ maxHeight: 420 }}
-                      />
-                    </button>
-                  )}
-                  {media.type !== MediaType.Photo && (
-                    <PlayCircleFilled className="absolute inset-0 m-auto w-fit h-fit text-white text-5xl drop-shadow-lg pointer-events-none" />
-                  )}
-                  {localPath && (
-                    <span className="absolute right-1 top-1 bg-[rgba(82,196,26,0.9)] text-white text-xs px-1.5 py-0.5 rounded pointer-events-none">
-                      已下载
-                    </span>
-                  )}
-                  <span className="absolute left-1 bottom-1 bg-black/60 text-white text-xs px-1.5 py-0.5 rounded pointer-events-none">
-                    p{index}
-                    {media.type === MediaType.Video && ' · 视频'}
-                    {media.type === MediaType.Gif && ' · GIF'}
-                  </span>
-                </div>
-              );
-            })}
+            {medias.map((media, index) => (
+              <div key={media.id || index} className="relative">
+                <Image
+                  src={`${media.url}?format=jpg&name=small`}
+                  preview={{
+                    src: `${media.url}?format=jpg&name=orig`,
+                  }}
+                  alt={`媒体 p${index}`}
+                  width="100%"
+                  style={{
+                    objectFit: 'cover',
+                    maxHeight: 420,
+                    width: '100%',
+                  }}
+                />
+                {media.type !== MediaType.Photo && (
+                  <PlayCircleFilled className="absolute inset-0 m-auto w-fit h-fit text-white text-5xl drop-shadow-lg pointer-events-none" />
+                )}
+                <span className="absolute left-1 bottom-1 bg-black/60 text-white text-xs px-1.5 py-0.5 rounded pointer-events-none">
+                  p{index}
+                  {media.type === MediaType.Video && ' · 视频'}
+                  {media.type === MediaType.Gif && ' · GIF'}
+                </span>
+              </div>
+            ))}
           </div>
         </Image.PreviewGroup>
       )}
@@ -240,12 +183,6 @@ export const PostPreview: React.FC<PostPreviewProps> = ({
           在 X 上查看原帖
         </a>
       </div>
-      <VideoPreviewModal
-        open={!!videoPreview}
-        src={videoPreview?.src}
-        title={videoPreview?.title}
-        onClose={() => setVideoPreview(null)}
-      />
     </section>
   );
 };

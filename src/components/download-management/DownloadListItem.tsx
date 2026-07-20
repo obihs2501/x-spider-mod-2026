@@ -128,32 +128,62 @@ export const DownloadListItem: React.FC<DownloadListItemProps> = ({
     icon: <FolderFilled />,
   };
 
+  // 已下载的文件直接本地打开，只有本地没有时才跳转推文网页
+  const openMediaLocalFirst = async () => {
+    try {
+      const filePath = await path.join(t.dir, t.fileName);
+      if (await fs.exists(filePath)) {
+        await shell.open(filePath);
+        return;
+      }
+    } catch (err) {
+      log.error(err);
+    }
+    if (t.post.user?.screenName && t.post.id) {
+      await shell.open(buildPostUrl(t.post.user.screenName, t.post.id));
+    } else {
+      message.warning('本地文件不存在，且无法定位推文链接');
+    }
+  };
+
+  // 博主本地文件夹存在就打开文件夹，不存在才跳转 X 主页
+  const openUserLocalFirst = async () => {
+    try {
+      if (t.dir && (await fs.exists(t.dir))) {
+        await shell.open(t.dir);
+        return;
+      }
+    } catch (err) {
+      log.error(err);
+    }
+    if (t.post.user?.screenName) {
+      await shell.open(buildUserUrl(t.post.user.screenName));
+    } else {
+      message.warning('未找到该博主的本地文件夹');
+    }
+  };
+
   return (
     <div
       role="listitem"
       className="bg-white border-[1px] border-gray-300 rounded-md flex overflow-hidden"
     >
-      <a
-        href={
-          t.post.user?.screenName && t.post.id
-            ? buildPostUrl(t.post.user.screenName, t.post.id)
-            : 'javascript:void(0);'
-        }
-        target="_blank"
-        rel="noreferrer"
-        className="shrink-0 overflow-hidden"
+      <button
+        type="button"
+        onClick={openMediaLocalFirst}
+        className="shrink-0 overflow-hidden bg-transparent p-0"
         style={{
           width: itemClientHeight,
           height: itemClientHeight,
         }}
-        title="打开推文页"
+        title="打开本地文件（本地不存在时打开推文网页）"
       >
         <img
           src={`${t.media.url}?format=jpg&name=thumb`}
           loading="lazy"
           className="w-full h-full object-cover transition-transform transform hover:scale-105"
         />
-      </a>
+      </button>
       <div className="ml-4 overflow-hidden pr-4 w-full h-full">
         <p
           title={t.fileName}
@@ -161,21 +191,16 @@ export const DownloadListItem: React.FC<DownloadListItemProps> = ({
         >
           {t.fileName}
         </p>
-        <a
-          href={
-            t.post.user?.screenName
-              ? buildUserUrl(t.post.user?.screenName)
-              : 'javascript:void(0);'
-          }
-          title={`跳转到 ${t.post.user?.name || t.post.user?.screenName || '未知用户'} 的主页`}
-          target="_blank"
-          rel="noreferrer"
+        <button
+          type="button"
+          onClick={openUserLocalFirst}
+          title={`打开 ${t.post.user?.name || t.post.user?.screenName || '未知用户'} 的本地文件夹（不存在时打开 X 主页）`}
           className="text-xs flex items-center space-x-1 w-fit text-ant-color-text-secondary bg-gray-100 p-1 rounded-full pr-2 overflow-hidden"
         >
           <Avatar src={t.post.user?.avatar} size={20} />
           <span>{t.post.user?.name || '未知用户'}</span>
           {t.post.user?.screenName && <span>@{t.post.user.screenName}</span>}
-        </a>
+        </button>
         <div className="mt-2">
           <TaskActions
             actions={R.cond([

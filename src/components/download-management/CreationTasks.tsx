@@ -1,9 +1,27 @@
 /* eslint-disable react/prop-types */
 import React from 'react';
+import { fs, shell } from '@tauri-apps/api';
 import { useDownloadStore } from '../../stores/download';
+import { useLocalIndexStore } from '../../stores/local-index';
 import { Avatar, Button, Tooltip } from 'antd';
 import { buildUserUrl } from '../../twitter/url';
 import { QuestionCircleOutlined } from '@ant-design/icons';
+
+// 博主本地文件夹存在就打开文件夹，不存在才跳转 X 主页
+async function openBloggerLocalFirst(screenName?: string) {
+  if (!screenName) return;
+  try {
+    const dir =
+      useLocalIndexStore.getState().bloggerStats[screenName]?.directoryPath;
+    if (dir && (await fs.exists(dir))) {
+      await shell.open(dir);
+      return;
+    }
+  } catch (err) {
+    log.error(err);
+  }
+  await shell.open(buildUserUrl(screenName));
+}
 
 export const CreationTasks: React.FC = () => {
   const { creationTasks, removeCreationTask } = useDownloadStore((s) => ({
@@ -19,21 +37,17 @@ export const CreationTasks: React.FC = () => {
       <ul className="mt-2 text-sm space-y-4 max-h-40 overflow-y-auto">
         {creationTasks.map((t) => (
           <li className="flex items-center justify-between" key={t.id}>
-            <a
-              href={
-                t.user?.screenName
-                  ? buildUserUrl(t.user.screenName)
-                  : 'javascript:void(0);'
-              }
-              target="_blank"
-              rel="noreferrer"
-              className="flex items-center space-x-1 overflow-hidden pr-4"
+            <button
+              type="button"
+              onClick={() => openBloggerLocalFirst(t.user?.screenName)}
+              title="打开博主本地文件夹（不存在时打开 X 主页）"
+              className="flex items-center space-x-1 overflow-hidden pr-4 bg-transparent"
             >
               <Avatar size={20} src={t.user.avatar} className="shrink-0" />
               <span className="whitespace-nowrap overflow-hidden text-ellipsis">
                 {`${t.user?.name || '未知用户'} ${t.user?.screenName ? `@${t.user.screenName}` : ''}`}
               </span>
-            </a>
+            </button>
             <div className="flex items-center space-x-2 shrink-0">
               <span className="space-x-2">
                 <span>已发送：{t.completeCount}</span>
