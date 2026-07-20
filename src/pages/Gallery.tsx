@@ -10,6 +10,12 @@ import {
   ReloadOutlined,
   UnorderedListOutlined,
   AppstoreOutlined,
+  SwapOutlined,
+  RotateLeftOutlined,
+  RotateRightOutlined,
+  ZoomOutOutlined,
+  ZoomInOutlined,
+  VerticalAlignTopOutlined,
 } from '@ant-design/icons';
 import React, {
   useCallback,
@@ -287,13 +293,23 @@ export const Gallery: React.FC = () => {
       if (cancelled) return;
       const state = useGalleryStore.getState();
       if (!state.foldersLoaded || state.foldersDir !== saveDirBase) {
-        loadFolders();
+        await loadFolders();
+      }
+      // 如果有待打开的路径，扫描完成后自动打开对应文件夹
+      if (state.pendingOpenPath && !cancelled) {
+        const target = useGalleryStore
+          .getState()
+          .folders.find((f) => f.path === state.pendingOpenPath);
+        if (target) {
+          openFolder(target);
+        }
+        useGalleryStore.getState().setPendingOpenPath(null);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [saveDirBase, loadFolders]);
+  }, [saveDirBase, loadFolders, openFolder]);
 
   const compareItems = useCallback(
     (
@@ -612,30 +628,47 @@ export const Gallery: React.FC = () => {
                           <Button
                             size="small"
                             icon={<FolderOpenOutlined />}
+                            title="用默认程序打开"
                             onClick={() => {
                               if (currentMedia) shell.open(currentMedia.path);
                             }}
-                          >
-                            打开
-                          </Button>
-                          <Button size="small" onClick={onFlipY}>
-                            垂直翻转
-                          </Button>
-                          <Button size="small" onClick={onFlipX}>
-                            水平翻转
-                          </Button>
-                          <Button size="small" onClick={onRotateLeft}>
-                            左转
-                          </Button>
-                          <Button size="small" onClick={onRotateRight}>
-                            右转
-                          </Button>
-                          <Button size="small" onClick={onZoomOut}>
-                            缩小
-                          </Button>
-                          <Button size="small" onClick={onZoomIn}>
-                            放大
-                          </Button>
+                          />
+                          <Button
+                            size="small"
+                            icon={<VerticalAlignTopOutlined />}
+                            title="垂直翻转"
+                            onClick={onFlipY}
+                          />
+                          <Button
+                            size="small"
+                            icon={<SwapOutlined />}
+                            title="水平翻转"
+                            onClick={onFlipX}
+                          />
+                          <Button
+                            size="small"
+                            icon={<RotateLeftOutlined />}
+                            title="左转"
+                            onClick={onRotateLeft}
+                          />
+                          <Button
+                            size="small"
+                            icon={<RotateRightOutlined />}
+                            title="右转"
+                            onClick={onRotateRight}
+                          />
+                          <Button
+                            size="small"
+                            icon={<ZoomOutOutlined />}
+                            title="缩小"
+                            onClick={onZoomOut}
+                          />
+                          <Button
+                            size="small"
+                            icon={<ZoomInOutlined />}
+                            title="放大"
+                            onClick={onZoomIn}
+                          />
                         </div>
                       );
                     },

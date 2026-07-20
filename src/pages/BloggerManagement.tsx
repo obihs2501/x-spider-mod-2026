@@ -155,9 +155,13 @@ export const BloggerManagement: React.FC = () => {
       message.warning('未找到该博主的本地文件夹，请先导入本地已下载内容');
       return;
     }
+    // 使用 useGalleryStore 导入并设置待打开的路径
+    const { setPendingOpenPath } = await import('../stores/gallery').then((m) =>
+      m.useGalleryStore.getState(),
+    );
+    setPendingOpenPath(directoryPath);
     const galleryRoute = ROUTES.find((r) => r.id === 'gallery');
     if (galleryRoute) setRoute(galleryRoute);
-    // 画廊会自动加载 saveDirBase 并扫描子文件夹
   };
 
   const gotoHomepage = async (screenName: string) => {
