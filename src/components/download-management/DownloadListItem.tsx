@@ -146,11 +146,21 @@ export const DownloadListItem: React.FC<DownloadListItemProps> = ({
     }
   };
 
-  // 博主本地文件夹存在就打开文件夹，不存在才跳转 X 主页
+  // 博主本地文件夹存在就在画廊中打开，不存在才跳转 X 主页
   const openUserLocalFirst = async () => {
     try {
       if (t.dir && (await fs.exists(t.dir))) {
-        await shell.open(t.dir);
+        // 使用 useGalleryStore 导入并设置待打开的路径
+        const { setPendingOpenPath } = await import(
+          '../../stores/gallery'
+        ).then((m) => m.useGalleryStore.getState());
+        const { setRoute } = await import('../../stores/route').then((m) =>
+          m.useRouteStore.getState(),
+        );
+        const { ROUTES } = await import('../../constants/routes');
+        setPendingOpenPath(t.dir);
+        const galleryRoute = ROUTES.find((r) => r.id === 'gallery');
+        if (galleryRoute) setRoute(galleryRoute);
         return;
       }
     } catch (err) {
@@ -194,7 +204,7 @@ export const DownloadListItem: React.FC<DownloadListItemProps> = ({
         <button
           type="button"
           onClick={openUserLocalFirst}
-          title={`打开 ${t.post.user?.name || t.post.user?.screenName || '未知用户'} 的本地文件夹（不存在时打开 X 主页）`}
+          title={`在画廊中打开 ${t.post.user?.name || t.post.user?.screenName || '未知用户'} 的文件夹（不存在时打开 X 主页）`}
           className="text-xs flex items-center space-x-1 w-fit text-ant-color-text-secondary bg-gray-100 p-1 rounded-full pr-2 overflow-hidden"
         >
           <Avatar src={t.post.user?.avatar} size={20} />

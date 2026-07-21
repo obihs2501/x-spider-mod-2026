@@ -626,7 +626,7 @@ export const Gallery: React.FC = () => {
                       return (
                         <div className="flex gap-2 items-center">
                           <Button
-                            size="small"
+                            size="large"
                             icon={<FolderOpenOutlined />}
                             title="用默认程序打开"
                             onClick={() => {
@@ -634,37 +634,37 @@ export const Gallery: React.FC = () => {
                             }}
                           />
                           <Button
-                            size="small"
+                            size="large"
                             icon={<VerticalAlignTopOutlined />}
                             title="垂直翻转"
                             onClick={onFlipY}
                           />
                           <Button
-                            size="small"
+                            size="large"
                             icon={<SwapOutlined />}
                             title="水平翻转"
                             onClick={onFlipX}
                           />
                           <Button
-                            size="small"
+                            size="large"
                             icon={<RotateLeftOutlined />}
                             title="左转"
                             onClick={onRotateLeft}
                           />
                           <Button
-                            size="small"
+                            size="large"
                             icon={<RotateRightOutlined />}
                             title="右转"
                             onClick={onRotateRight}
                           />
                           <Button
-                            size="small"
+                            size="large"
                             icon={<ZoomOutOutlined />}
                             title="缩小"
                             onClick={onZoomOut}
                           />
                           <Button
-                            size="small"
+                            size="large"
                             icon={<ZoomInOutlined />}
                             title="放大"
                             onClick={onZoomIn}
