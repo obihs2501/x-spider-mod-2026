@@ -98,7 +98,6 @@ export async function request(options: RequestOptions) {
       // 直接上抛以避免批量任务每个博主卡数分钟。
       if (nonRetryable) throw err;
       await delay(effectiveDelay);
-      await delay(effectiveDelay);
       remainingRetryCount--;
       retryDelay *= 2;
       if (retryDelay > MAX_RETRY_DELAY) {

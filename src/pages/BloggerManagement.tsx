@@ -563,6 +563,34 @@ export const BloggerManagement: React.FC = () => {
         >
           批量增量（{selected.length}）
         </Button>
+        <Dropdown
+          menu={{
+            items: [
+              { key: 'none', label: '取消分组' },
+              ...(groups.length > 0 ? [{ type: 'divider' as const }] : []),
+              ...groups.map((g) => ({ key: g.id, label: g.name })),
+            ],
+            onClick: ({ key }) => {
+              const targetGroupId = key === 'none' ? null : key;
+              selected.forEach((screenName) =>
+                moveBloggerToGroup(screenName, targetGroupId),
+              );
+              const targetName =
+                key === 'none'
+                  ? '未分组'
+                  : groups.find((g) => g.id === key)?.name || '';
+              message.success(
+                `已将 ${selected.length} 位博主移动到${targetName}`,
+              );
+              setSelected([]);
+            },
+          }}
+          disabled={selected.length === 0}
+        >
+          <Button size="small" disabled={selected.length === 0}>
+            移动到分组（{selected.length}）
+          </Button>
+        </Dropdown>
         <Button
           size="small"
           danger
