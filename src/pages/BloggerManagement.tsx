@@ -383,7 +383,7 @@ export const BloggerManagement: React.FC = () => {
     return (
       <List.Item
         key={b.screenName}
-        className="hover:bg-gray-50 dark:hover:bg-gray-800 px-4"
+        className="!px-4 !py-3 !border-0 transition-colors hover:bg-ant-color-fill-secondary cursor-pointer"
         actions={[
           <Tooltip key="inc" title="增量下载">
             <Button
@@ -391,7 +391,10 @@ export const BloggerManagement: React.FC = () => {
               size="small"
               icon={<CloudDownloadOutlined />}
               loading={isIncLoading}
-              onClick={() => openIncrementalDialog([b])}
+              onClick={(e) => {
+                e.stopPropagation();
+                openIncrementalDialog([b]);
+              }}
             />
           </Tooltip>,
           <Tooltip key="folder" title="打开本地文件夹">
@@ -399,7 +402,10 @@ export const BloggerManagement: React.FC = () => {
               type="text"
               size="small"
               icon={<FolderOpenOutlined />}
-              onClick={() => openLocalFolder(b)}
+              onClick={(e) => {
+                e.stopPropagation();
+                openLocalFolder(b);
+              }}
             />
           </Tooltip>,
           <Tooltip key="gallery" title="在画廊中查看">
@@ -407,7 +413,10 @@ export const BloggerManagement: React.FC = () => {
               type="text"
               size="small"
               icon={<AppstoreOutlined />}
-              onClick={() => openInGallery(b)}
+              onClick={(e) => {
+                e.stopPropagation();
+                openInGallery(b);
+              }}
             />
           </Tooltip>,
           <Tooltip key="homepage" title="跳转主页预览">
@@ -416,7 +425,10 @@ export const BloggerManagement: React.FC = () => {
               size="small"
               icon={<SearchOutlined />}
               loading={isHomeLoading}
-              onClick={() => gotoHomepage(b.screenName)}
+              onClick={(e) => {
+                e.stopPropagation();
+                gotoHomepage(b.screenName);
+              }}
             />
           </Tooltip>,
           <Dropdown
@@ -432,7 +444,12 @@ export const BloggerManagement: React.FC = () => {
             }}
             trigger={['click']}
           >
-            <Button type="text" size="small" icon={<DragOutlined />} />
+            <Button
+              type="text"
+              size="small"
+              icon={<DragOutlined />}
+              onClick={(e) => e.stopPropagation()}
+            />
           </Dropdown>,
           <Button
             key="del"
@@ -440,7 +457,8 @@ export const BloggerManagement: React.FC = () => {
             size="small"
             danger
             icon={<DeleteOutlined />}
-            onClick={() => {
+            onClick={(e) => {
+              e.stopPropagation();
               modal.confirm({
                 title: `从列表移除 ${b.screenName}？`,
                 content: '不会删除本地文件。',
@@ -450,44 +468,53 @@ export const BloggerManagement: React.FC = () => {
           />,
         ]}
       >
-        <List.Item.Meta
-          avatar={
-            <Checkbox
-              checked={isSelected}
-              onChange={(e) =>
-                setSelected(
-                  e.target.checked
-                    ? [...selected, b.screenName]
-                    : selected.filter((s) => s !== b.screenName),
-                )
-              }
-              onClick={(e) => e.stopPropagation()}
-              className="mr-2"
-            />
-          }
-          title={
-            <Space>
-              {b.avatar && <Avatar size="small" src={b.avatar} />}
-              <span className="font-semibold">@{b.screenName}</span>
-              {b.name && <span className="text-gray-500">{b.name}</span>}
-            </Space>
-          }
-          description={
-            <div className="text-xs text-gray-400 space-x-3">
+        <div className="flex items-center gap-3 min-w-0 flex-1">
+          <Checkbox
+            checked={isSelected}
+            onChange={(e) => {
+              e.stopPropagation();
+              setSelected(
+                e.target.checked
+                  ? [...selected, b.screenName]
+                  : selected.filter((s) => s !== b.screenName),
+              );
+            }}
+            onClick={(e) => e.stopPropagation()}
+          />
+          {b.avatar && (
+            <Avatar src={b.avatar} size={40} className="flex-shrink-0" />
+          )}
+          <div className="flex-1 min-w-0">
+            <button
+              className="flex items-center gap-2 mb-1 bg-transparent hover:text-ant-color-primary transition-colors disabled:opacity-50 text-left w-full"
+              disabled={isHomeLoading}
+              onClick={(e) => {
+                e.stopPropagation();
+                gotoHomepage(b.screenName);
+              }}
+            >
+              <span className="font-semibold text-ant-color-text truncate">
+                {b.name || b.screenName}
+              </span>
+              <span className="text-ant-color-text-tertiary text-sm truncate">
+                @{b.screenName}
+              </span>
+            </button>
+            <div className="flex items-center gap-3 text-xs text-ant-color-text-secondary">
               {stats && <span>本地 {stats.postCount} 帖</span>}
               {b.lastDownloadAt > 0 && (
                 <span>
-                  上次下载 {dayjs(b.lastDownloadAt).format('YYYY-MM-DD HH:mm')}
+                  上次 {dayjs(b.lastDownloadAt).format('MM-DD HH:mm')}
                 </span>
               )}
               {b.lastSeenTweetId && (
                 <Tooltip title={`游标 ID: ${b.lastSeenTweetId}`}>
-                  <span className="text-green-600">已记游标</span>
+                  <span className="text-ant-color-success">✓ 游标</span>
                 </Tooltip>
               )}
             </div>
-          }
-        />
+          </div>
+        </div>
       </List.Item>
     );
   };
@@ -573,18 +600,23 @@ export const BloggerManagement: React.FC = () => {
         {filtered.length === 0 ? (
           <Empty description="无博主或搜索无结果" />
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-3">
+            {/* 分组卡片 */}
             {groupedBloggers.grouped.map(({ group, bloggers: gBloggers }) => (
-              <div key={group.id} className="border rounded-lg">
-                <div className="flex items-center justify-between px-4 py-2 bg-gray-100 dark:bg-gray-800 cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700">
-                  <Space
-                    onClick={() => toggleGroupCollapse(group.id)}
-                    className="flex-1"
-                  >
+              <div
+                key={group.id}
+                className="border border-ant-color-border rounded-lg overflow-hidden bg-ant-color-bg-container"
+              >
+                {/* 分组头部 */}
+                <div
+                  className="flex items-center justify-between px-4 py-2.5 bg-ant-color-fill-quaternary cursor-pointer transition-colors hover:bg-ant-color-fill-tertiary"
+                  onClick={() => toggleGroupCollapse(group.id)}
+                >
+                  <Space className="flex-1">
                     {group.collapsed ? (
-                      <CaretRightOutlined />
+                      <CaretRightOutlined className="text-ant-color-text-tertiary" />
                     ) : (
-                      <CaretDownOutlined />
+                      <CaretDownOutlined className="text-ant-color-text-tertiary" />
                     )}
                     {renamingGroup === group.id ? (
                       <Input
@@ -595,15 +627,18 @@ export const BloggerManagement: React.FC = () => {
                         onPressEnter={confirmRenameGroup}
                         onClick={(e) => e.stopPropagation()}
                         autoFocus
-                        style={{ width: 150 }}
+                        style={{ width: 180 }}
                       />
                     ) : (
-                      <span className="font-semibold">
-                        {group.name} ({gBloggers.length})
+                      <span className="font-semibold text-ant-color-text">
+                        {group.name}
+                        <span className="ml-2 text-ant-color-text-tertiary font-normal">
+                          ({gBloggers.length})
+                        </span>
                       </span>
                     )}
                   </Space>
-                  <Space>
+                  <Space size="small">
                     <Button
                       type="text"
                       size="small"
@@ -625,27 +660,41 @@ export const BloggerManagement: React.FC = () => {
                     />
                   </Space>
                 </div>
+
+                {/* 分组内博主列表 */}
                 {!group.collapsed && gBloggers.length > 0 && (
                   <List
                     dataSource={gBloggers}
                     renderItem={renderBloggerItem}
-                    size="small"
+                    split={true}
+                    className="[&_.ant-list-item]:border-t [&_.ant-list-item]:border-ant-color-border-secondary"
                   />
                 )}
               </div>
             ))}
 
+            {/* 未分组博主 */}
             {groupedBloggers.ungrouped.length > 0 && (
-              <div>
+              <div className="border border-ant-color-border rounded-lg overflow-hidden bg-ant-color-bg-container">
                 {groups.length > 0 && (
-                  <div className="px-4 py-2 text-sm text-gray-500 font-semibold">
-                    未分组 ({groupedBloggers.ungrouped.length})
+                  <div className="px-4 py-2.5 bg-ant-color-fill-quaternary">
+                    <span className="font-semibold text-ant-color-text">
+                      未分组
+                      <span className="ml-2 text-ant-color-text-tertiary font-normal">
+                        ({groupedBloggers.ungrouped.length})
+                      </span>
+                    </span>
                   </div>
                 )}
                 <List
                   dataSource={groupedBloggers.ungrouped}
                   renderItem={renderBloggerItem}
-                  size="small"
+                  split={true}
+                  className={
+                    groups.length > 0
+                      ? '[&_.ant-list-item]:border-t [&_.ant-list-item]:border-ant-color-border-secondary'
+                      : ''
+                  }
                 />
               </div>
             )}
