@@ -17,6 +17,12 @@ import { useSettingsStore } from '../stores/settings';
 import { parseCookie } from '../utils/cookie';
 import MediaType from '../enums/MediaType';
 import { getGuestToken, PUBLIC_BEARER } from './guest';
+import {
+  acquireBudget,
+  currentAccountKey,
+  noteRateLimitHeaders,
+} from './rate-limit';
+import { RequestOptions } from '../interfaces/RequestOptions';
 
 const HOST = 'x.com';
 
@@ -72,6 +78,27 @@ async function handle429(): Promise<Record<string, string> | null> {
   return getAuthedHeaders();
 }
 
+/**
+ * 带主动限流的 X API 请求：
+ * - 每次尝试前按 账号+接口路径 检查限流预算，预算耗尽时切换到有余量的账号或等待重置；
+ * - 每次尝试前重建鉴权头（切号后新账号 Cookie 才会生效）；
+ * - 收到响应后解析 X-Rate-Limit 头记账。
+ */
+async function xRequest(options: RequestOptions) {
+  const apiPath = new URL(options.url).pathname;
+  let attemptAccountKey = 'guest';
+  return request({
+    ...options,
+    beforeAttempt: async () => {
+      await acquireBudget(apiPath);
+      attemptAccountKey = currentAccountKey();
+    },
+    getHeaders: () => getAuthedHeaders(),
+    afterResponse: (res) =>
+      noteRateLimitHeaders(attemptAccountKey, apiPath, res.headers),
+  });
+}
+
 function getCommonHeaders(withCredentials = true): Record<string, string> {
   const cookies =
     useAccountsStore.getState().getActiveAccount()?.cookieString || '';
@@ -121,7 +148,7 @@ export async function getAccountInfo(
 }
 
 export async function getUser(screenName: string): Promise<TwitterUser> {
-  const resp = await request({
+  const resp = await xRequest({
     method: 'GET',
     responseType: 'json',
     url: `https://${HOST}/i/api/graphql/sLVLhk0bGj3MVFEKTdax1w/UserByScreenName`,
@@ -146,7 +173,6 @@ export async function getUser(screenName: string): Promise<TwitterUser> {
         withSafetyModeUserFields: true,
       }),
     },
-    headers: await getAuthedHeaders(),
     on429: handle429,
   });
   ensureResponse(resp);
@@ -285,7 +311,7 @@ export async function getUserMedias(
   twitterPosts: TwitterPost[];
   cursor: string | null;
 }> {
-  const resp = await request({
+  const resp = await xRequest({
     method: 'GET',
     url: `https://${HOST}/i/api/graphql/YqiE3JL1KNgf9nSljYdxaA/UserMedia`,
     responseType: 'json',
@@ -326,7 +352,6 @@ export async function getUserMedias(
         withV2Timeline: true,
       }),
     },
-    headers: await getAuthedHeaders(),
     on429: handle429,
   });
   ensureResponse(resp);
@@ -427,7 +452,7 @@ export async function getUserTweets(
   twitterPosts: TwitterPost[];
   cursor: string | null;
 }> {
-  const resp = await request({
+  const resp = await xRequest({
     method: 'GET',
     url: `https://${HOST}/i/api/graphql/HuTx74BxAnezK1gWvYY7zg/UserTweets`,
     responseType: 'json',
@@ -472,7 +497,6 @@ export async function getUserTweets(
         withV2Timeline: true,
       }),
     },
-    headers: await getAuthedHeaders(),
     on429: handle429,
   });
   ensureResponse(resp);
@@ -577,7 +601,7 @@ export async function getUserTweets(
  * 返回包含媒体信息的 TwitterPost。
  */
 export async function getTweetDetail(tweetId: string): Promise<TwitterPost> {
-  const resp = await request({
+  const resp = await xRequest({
     method: 'GET',
     url: `https://${HOST}/i/api/graphql/D_jNhjWZeRZT5NURzfJZSQ/TweetResultByRestId`,
     responseType: 'json',
@@ -631,7 +655,6 @@ export async function getTweetDetail(tweetId: string): Promise<TwitterPost> {
         withDisallowedReplyControls: false,
       }),
     },
-    headers: await getAuthedHeaders(),
     on429: handle429,
   });
   ensureResponse(resp);
@@ -659,4 +682,160 @@ export async function getTweetDetail(tweetId: string): Promise<TwitterPost> {
     throw new Error('该帖子解析失败');
   }
   return posts[0];
+}
+
+/** 列表成员 / 关注列表接口共用的 features */
+const USER_TIMELINE_FEATURES = JSON.stringify({
+  rweb_tipjar_consumption_enabled: true,
+  responsive_web_graphql_exclude_directive_enabled: true,
+  verified_phone_label_enabled: false,
+  creator_subscriptions_tweet_preview_api_enabled: true,
+  responsive_web_graphql_timeline_navigation_enabled: true,
+  responsive_web_graphql_skip_user_profile_image_extensions_enabled: false,
+  communities_web_enable_tweet_community_results_fetch: true,
+  c9s_tweet_anatomy_moderator_badge_enabled: true,
+  articles_preview_enabled: true,
+  tweetypie_unmention_optimization_enabled: true,
+  responsive_web_edit_tweet_api_enabled: true,
+  graphql_is_translatable_rweb_tweet_is_translatable_enabled: true,
+  view_counts_everywhere_api_enabled: true,
+  longform_notetweets_consumption_enabled: true,
+  responsive_web_twitter_article_tweet_consumption_enabled: true,
+  tweet_awards_web_tipping_enabled: false,
+  creator_subscriptions_quote_tweet_preview_enabled: false,
+  freedom_of_speech_not_reach_fetch_enabled: true,
+  standardized_nudges_misinfo: true,
+  tweet_with_visibility_results_prefer_gql_limited_actions_policy_enabled: true,
+  rweb_video_timestamps_enabled: true,
+  longform_notetweets_rich_text_read_enabled: true,
+  longform_notetweets_inline_media_enabled: true,
+  responsive_web_enhance_cards_enabled: false,
+});
+
+/** 从用户时间线（列表成员/关注）响应指令中提取用户与下一页游标 */
+function extractTimelineUsers(instructions: any[]): {
+  users: TwitterUser[];
+  cursor: string | null;
+} {
+  const entries: any[] = R.pipe(
+    R.find(R.pathEq('TimelineAddEntries', ['type'])) as any,
+    R.defaultTo({}),
+    R.propOr([], 'entries'),
+  )(instructions || []) as any[];
+  const users: TwitterUser[] = [];
+  let cursor: string | null = null;
+  for (const entry of entries) {
+    const content = entry?.content;
+    if (content?.entryType === 'TimelineTimelineItem') {
+      const result = content?.itemContent?.user_results?.result;
+      const legacy = result?.legacy;
+      if (result?.rest_id && legacy?.screen_name) {
+        users.push({
+          id: result.rest_id,
+          screenName: legacy.screen_name,
+          name: legacy.name,
+          avatar: legacy.profile_image_url_https,
+          mediaCount: legacy.media_count,
+          registerTime: dayjs(legacy.created_at),
+        });
+      }
+    } else if (
+      content?.entryType === 'TimelineTimelineCursor' &&
+      content?.cursorType === 'Bottom'
+    ) {
+      cursor = content?.value || null;
+    }
+  }
+  return { users, cursor };
+}
+
+/** 分页拉取用户时间线（列表成员/关注共用），带页间延迟与游标环路保护 */
+async function fetchTimelineUsers(
+  url: string,
+  buildVariables: (cursor: string | undefined) => Record<string, any>,
+  instructionsPath: string[],
+  onProgress?: (count: number) => void,
+): Promise<TwitterUser[]> {
+  const users: TwitterUser[] = [];
+  const seenIds = new Set<string>();
+  const seenCursors = new Set<string>();
+  let cursor: string | undefined;
+  // 上限保护：最多 50 页 / 5000 个用户
+  for (let page = 0; page < 50 && users.length < 5000; page++) {
+    const resp = await xRequest({
+      method: 'GET',
+      responseType: 'json',
+      url,
+      query: {
+        variables: JSON.stringify(buildVariables(cursor)),
+        features: USER_TIMELINE_FEATURES,
+      },
+      on429: handle429,
+    });
+    ensureResponse(resp);
+    const apiErrors = R.path<any[]>(['errors'])(resp.body);
+    if (apiErrors?.length) {
+      const msg = apiErrors
+        .map((e: any) => e?.message || e?.code)
+        .filter(Boolean)
+        .join('；');
+      throw new Error(`X API 返回错误：${msg || '未知错误'}`);
+    }
+    const instructions = R.path<any[]>(instructionsPath)(resp.body) || [];
+    const pageResult = extractTimelineUsers(instructions);
+    for (const u of pageResult.users) {
+      if (!seenIds.has(u.id)) {
+        seenIds.add(u.id);
+        users.push(u);
+      }
+    }
+    onProgress?.(users.length);
+    if (
+      pageResult.users.length === 0 ||
+      !pageResult.cursor ||
+      seenCursors.has(pageResult.cursor)
+    ) {
+      break;
+    }
+    seenCursors.add(pageResult.cursor);
+    cursor = pageResult.cursor;
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+  }
+  return users;
+}
+
+/** 获取 X 列表的全部成员（需要登录 Cookie） */
+export async function getListMembers(
+  listId: string,
+  onProgress?: (count: number) => void,
+): Promise<TwitterUser[]> {
+  return fetchTimelineUsers(
+    `https://${HOST}/i/api/graphql/3dQPyRyAj6Lslp4e0ClXzg/ListMembers`,
+    (cursor) => ({
+      listId,
+      count: 100,
+      withSafetyModeUserFields: true,
+      ...(cursor ? { cursor } : {}),
+    }),
+    ['data', 'list', 'members_timeline', 'timeline', 'instructions'],
+    onProgress,
+  );
+}
+
+/** 获取某账号关注的全部用户（需要登录 Cookie） */
+export async function getFollowing(
+  userId: string,
+  onProgress?: (count: number) => void,
+): Promise<TwitterUser[]> {
+  return fetchTimelineUsers(
+    `https://${HOST}/i/api/graphql/7FEKOPNAvxWASt6v9gfCXw/Following`,
+    (cursor) => ({
+      userId,
+      count: 100,
+      includePromotedContent: false,
+      ...(cursor ? { cursor } : {}),
+    }),
+    ['data', 'user', 'result', 'timeline', 'timeline', 'instructions'],
+    onProgress,
+  );
 }

@@ -6,6 +6,7 @@ import { persist } from 'zustand/middleware';
 import { createTauriFileStorage } from './persist/tauri-file-storage';
 import { useBloggerStore } from './bloggers';
 import { useLocalIndexStore } from './local-index';
+import { useFailedPostsStore } from './failed-posts';
 import { CreationTask } from '../interfaces/CreationTask';
 import { DownloadFilter } from '../interfaces/DownloadFilter';
 import { DownloadTask } from '../interfaces/DownloadTask';
@@ -454,11 +455,25 @@ async function runCreationTask(task: CreationTask, abortSignal: AbortSignal) {
 
   let completeCount = 0;
   let skipCount = 0;
+  let failCount = 0;
 
+  const taskStartAt = dayjs();
   let now = dayjs();
   const since = filter.dateRange?.[0] || dayjs.unix(0);
   const until = filter.dateRange?.[1] || now.clone();
   let nextCursor: string | undefined | null = undefined;
+
+  // 增量游标：扫到不晚于该 ID（雪花序）的帖子即停止翻页
+  const stopAtTweetId = filter.stopAtTweetId;
+  let reachedStopTweet = false;
+  let maxSeenTweetId: string | undefined;
+  const isNewerTweetId = (a: string, b: string) => {
+    try {
+      return BigInt(a) > BigInt(b);
+    } catch {
+      return false;
+    }
+  };
 
   const getListFn = filter.source === 'medias' ? getUserMedias : getUserTweets;
 
@@ -471,7 +486,7 @@ async function runCreationTask(task: CreationTask, abortSignal: AbortSignal) {
   const consecutiveSkipThreshold =
     settings.download.consecutiveSkipThreshold || 0;
 
-  while (nextCursor !== null && now.isAfter(since)) {
+  while (nextCursor !== null && now.isAfter(since) && !reachedStopTweet) {
     if (abortSignal.aborted) {
       return;
     }
@@ -487,7 +502,31 @@ async function runCreationTask(task: CreationTask, abortSignal: AbortSignal) {
     }
     now = R.last(twitterPosts)?.createdAt || now;
     log().info('Now', now.format('YYYY-MM-DD'), 'next cursor', nextCursor);
-    const filteredPosts = twitterPosts.filter(
+
+    for (const post of twitterPosts) {
+      if (
+        post.id &&
+        (!maxSeenTweetId || isNewerTweetId(post.id, maxSeenTweetId))
+      ) {
+        maxSeenTweetId = post.id;
+      }
+    }
+
+    let pagePosts = twitterPosts;
+    if (stopAtTweetId) {
+      const newerPosts = pagePosts.filter(
+        (p) => !p.id || isNewerTweetId(p.id, stopAtTweetId),
+      );
+      if (newerPosts.length < pagePosts.length) {
+        // 扫到增量游标：处理完本页更新的部分后停止翻页
+        reachedStopTweet = true;
+        skipCount += getMediaCounts(pagePosts) - getMediaCounts(newerPosts);
+        pagePosts = newerPosts;
+        log().info('Reached incremental cursor', stopAtTweetId);
+      }
+    }
+
+    const filteredPosts = pagePosts.filter(
       R.allPass([
         (post) => (post.medias ? post.medias.length >= 0 : false),
         (post) => {
@@ -502,7 +541,7 @@ async function runCreationTask(task: CreationTask, abortSignal: AbortSignal) {
     );
 
     const filteredCount =
-      getMediaCounts(twitterPosts) - getMediaCounts(filteredPosts);
+      getMediaCounts(pagePosts) - getMediaCounts(filteredPosts);
     skipCount += filteredCount;
     log().info('FilteredPosts', filteredPosts);
 
@@ -511,6 +550,7 @@ async function runCreationTask(task: CreationTask, abortSignal: AbortSignal) {
         ...task,
         completeCount,
         skipCount,
+        failCount,
       });
       continue;
     }
@@ -519,39 +559,52 @@ async function runCreationTask(task: CreationTask, abortSignal: AbortSignal) {
     const localIndex = useLocalIndexStore.getState();
 
     for (const post of filteredPosts) {
-      // 本地索引中已有该帖（文件名含帖子 ID），直接跳过
-      if (settings.download.sameFileSkip && localIndex.hasPost(post.id)) {
-        skipCount += post.medias?.length || 0;
-        consecutiveSkipCount += post.medias?.length || 0;
-        log().info('Skip because local index has post', post.id);
-        continue;
-      }
-      const filteredMedias = post.medias!.filter(
-        R.allPass([
-          (media) => {
-            if (!filter.mediaTypes) return false;
-            return filter.mediaTypes.includes(media.type);
-          },
-        ]),
-      );
-
-      log().info('FilteredMedias', filteredMedias);
-      for (const media of filteredMedias) {
-        const task = await prepareDownloadTask({ post, media });
-        log().info('Prepared download task', task);
-        const filePath = await path.join(task.dir, task.fileName);
-        log().info('Resolved file path', filePath);
-        if (settings.download.sameFileSkip && (await fs.exists(filePath))) {
-          skipCount++;
-          consecutiveSkipCount++;
-          log().info('Skip because sameFileSkip', media);
+      try {
+        // 本地索引中已有该帖（文件名含帖子 ID），直接跳过
+        if (settings.download.sameFileSkip && localIndex.hasPost(post.id)) {
+          skipCount += post.medias?.length || 0;
+          consecutiveSkipCount += post.medias?.length || 0;
+          log().info('Skip because local index has post', post.id);
           continue;
         }
-        paramsList.push({
-          media,
-          post,
+        const filteredMedias = post.medias!.filter(
+          R.allPass([
+            (media) => {
+              if (!filter.mediaTypes) return false;
+              return filter.mediaTypes.includes(media.type);
+            },
+          ]),
+        );
+
+        log().info('FilteredMedias', filteredMedias);
+        for (const media of filteredMedias) {
+          const task = await prepareDownloadTask({ post, media });
+          log().info('Prepared download task', task);
+          const filePath = await path.join(task.dir, task.fileName);
+          log().info('Resolved file path', filePath);
+          if (settings.download.sameFileSkip && (await fs.exists(filePath))) {
+            skipCount++;
+            consecutiveSkipCount++;
+            log().info('Skip because sameFileSkip', media);
+            continue;
+          }
+          paramsList.push({
+            media,
+            post,
+          });
+          consecutiveSkipCount = 0;
+        }
+      } catch (err: any) {
+        // 单帖处理失败：计入失败队列后继续，不中断整个任务
+        log().error('处理帖子失败，加入失败队列', post.id, err);
+        failCount++;
+        useFailedPostsStore.getState().addFailure({
+          screenName: user.screenName || '',
+          userName: user.name,
+          avatar: user.avatar,
+          postId: post.id || '',
+          error: err?.message || String(err),
         });
-        consecutiveSkipCount = 0;
       }
     }
 
@@ -562,6 +615,7 @@ async function runCreationTask(task: CreationTask, abortSignal: AbortSignal) {
         ...task,
         completeCount,
         skipCount,
+        failCount,
       });
 
       // 检查连续跳过阈值，提前终止
@@ -577,7 +631,30 @@ async function runCreationTask(task: CreationTask, abortSignal: AbortSignal) {
       continue;
     }
 
-    await batchCreateDownloadTask(paramsList);
+    try {
+      await batchCreateDownloadTask(paramsList);
+    } catch (err: any) {
+      // aria2 批量建任务失败：整批计入失败队列，继续后续分页
+      log().error('批量创建下载任务失败，计入失败队列', err);
+      failCount += paramsList.length;
+      const failedStore = useFailedPostsStore.getState();
+      for (const p of paramsList) {
+        failedStore.addFailure({
+          screenName: user.screenName || '',
+          userName: user.name,
+          avatar: user.avatar,
+          postId: p.post.id || '',
+          error: err?.message || String(err),
+        });
+      }
+      updateCreationTask({
+        ...task,
+        completeCount,
+        skipCount,
+        failCount,
+      });
+      continue;
+    }
     // 记录到本地索引，供之后增量/重复下载时快速跳过
     localIndex.addPosts(
       paramsList.map((p) => p.post.id).filter((id): id is string => !!id),
@@ -587,9 +664,23 @@ async function runCreationTask(task: CreationTask, abortSignal: AbortSignal) {
       ...task,
       completeCount,
       skipCount,
+      failCount,
     });
 
     if (abortSignal.aborted) break;
+  }
+
+  // 任务完整跑完（未被取消）才推进增量游标；中途取消会留下未扫描的空档，
+  // 此时推进游标会让空档里的帖子被永久跳过
+  if (!abortSignal.aborted && maxSeenTweetId && user.screenName) {
+    const untilLimit = filter.dateRange?.[1];
+    // 用户显式限定了早于本次任务开始的截止时间时不推进（未覆盖时间线头部）
+    if (!untilLimit || untilLimit.isAfter(taskStartAt.subtract(1, 'minute'))) {
+      useBloggerStore
+        .getState()
+        .recordSeenTweet(user.screenName, maxSeenTweetId);
+      log().info('Advance incremental cursor', user.screenName, maxSeenTweetId);
+    }
   }
 }
 

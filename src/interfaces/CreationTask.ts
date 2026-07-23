@@ -8,4 +8,6 @@ export interface CreationTask {
   status: 'waiting' | 'active';
   completeCount: number;
   skipCount: number;
+  /** 处理失败进入失败队列的媒体数 */
+  failCount?: number;
 }

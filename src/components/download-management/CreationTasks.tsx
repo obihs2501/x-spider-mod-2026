@@ -60,6 +60,15 @@ export const CreationTasks: React.FC = () => {
                     ：{t.skipCount}
                   </span>
                 )}
+                {(t.failCount || 0) > 0 && (
+                  <span className="text-red-500">
+                    失败
+                    <Tooltip title="处理失败的推文已进入失败队列，任务结束后可在失败队列中重试。">
+                      <QuestionCircleOutlined className="ml-1" />
+                    </Tooltip>
+                    ：{t.failCount}
+                  </span>
+                )}
               </span>
               <Button
                 onClick={async () => {

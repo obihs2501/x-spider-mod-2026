@@ -6,6 +6,7 @@ import {
   ImportOutlined,
   SearchOutlined,
   AppstoreOutlined,
+  UsergroupAddOutlined,
 } from '@ant-design/icons';
 import { fs, shell } from '@tauri-apps/api';
 import {
@@ -26,7 +27,8 @@ import dayjs, { Dayjs } from 'dayjs';
 import React, { useMemo, useState } from 'react';
 import { PageHeader } from '../components/PageHeader';
 import MediaType from '../enums/MediaType';
-import { getUser } from '../twitter/api';
+import { getFollowing, getListMembers, getUser } from '../twitter/api';
+import { TwitterUser } from '../interfaces/TwitterUser';
 import { BloggerRecord, useBloggerStore } from '../stores/bloggers';
 import { useDownloadStore } from '../stores/download';
 import { useLocalIndexStore } from '../stores/local-index';
@@ -70,6 +72,50 @@ export const BloggerManagement: React.FC = () => {
     total: number;
   } | null>(null);
 
+  const [importUsersOpen, setImportUsersOpen] = useState(false);
+  const [importKind, setImportKind] = useState<'list' | 'following'>('list');
+  const [importInput, setImportInput] = useState('');
+  const [importFetching, setImportFetching] = useState(false);
+  const [importProgress, setImportProgress] = useState(0);
+  const [importUsers, setImportUsers] = useState<TwitterUser[] | null>(null);
+
+  const fetchImportUsers = async () => {
+    const input = importInput.trim().replace(/^@/, '');
+    if (!input) return;
+    setImportFetching(true);
+    setImportUsers(null);
+    setImportProgress(0);
+    try {
+      let users: TwitterUser[];
+      if (importKind === 'list') {
+        users = await getListMembers(input, setImportProgress);
+      } else {
+        const target = await getUser(input);
+        users = await getFollowing(target.id, setImportProgress);
+      }
+      setImportUsers(users);
+      if (users.length === 0) {
+        message.warning('未获取到用户，请确认输入内容和登录 Cookie 是否有效');
+      }
+    } catch (err: any) {
+      log.error(err);
+      message.error(`获取失败：${err?.message || '未知原因'}`);
+    } finally {
+      setImportFetching(false);
+    }
+  };
+
+  const confirmImportUsers = () => {
+    if (!importUsers?.length) return;
+    const added = useBloggerStore.getState().importBloggers(importUsers);
+    message.success(
+      `导入完成：新增 ${added} 位博主（${importUsers.length - added} 位已存在）`,
+    );
+    setImportUsersOpen(false);
+    setImportUsers(null);
+    setImportInput('');
+  };
+
   const onImport = async () => {
     setImportLoading(true);
     try {
@@ -112,12 +158,18 @@ export const BloggerManagement: React.FC = () => {
     setIncrementalStart(dayjs(defaultStart));
   };
 
-  const createIncremental = async (b: BloggerRecord, since: Dayjs) => {
+  const createIncremental = async (
+    b: BloggerRecord,
+    since: Dayjs,
+    stopAtTweetId?: string,
+  ) => {
     const user = await getUser(b.screenName);
     createCreationTask(user, {
       source: 'medias',
       mediaTypes: [MediaType.Photo, MediaType.Video, MediaType.Gif],
-      dateRange: [since, dayjs()],
+      // 有游标时用游标精确截断（日期只会漏或多抓），无游标才用日期范围
+      dateRange: stopAtTweetId ? undefined : [since, dayjs()],
+      stopAtTweetId,
     });
   };
 
@@ -131,10 +183,12 @@ export const BloggerManagement: React.FC = () => {
       const b = targets[i];
       setIncLoading(b.screenName);
       try {
-        // 默认各博主用自己的起点，避免一个长期无更新（如被封号）的博主拖累整批
+        // 默认各博主用自己的起点，避免一个长期无更新（如被封号）的博主拖累整批；
+        // 自定义统一时间时不用游标，按用户显式选择的日期抓取
         const ts = getBloggerStartTs(b);
         const since = useCustomStart || ts <= 0 ? incrementalStart : dayjs(ts);
-        await createIncremental(b, since);
+        const stopAtTweetId = useCustomStart ? undefined : b.lastSeenTweetId;
+        await createIncremental(b, since, stopAtTweetId);
       } catch (err: any) {
         log.error(err);
         failed.push(`@${b.screenName}`);
@@ -224,6 +278,9 @@ export const BloggerManagement: React.FC = () => {
   const autoStartTss = incrementalTargets
     .map(getBloggerStartTs)
     .filter((ts) => ts > 0);
+  const cursorCount = incrementalTargets.filter(
+    (b) => b.lastSeenTweetId,
+  ).length;
   const autoRangeHint =
     autoStartTss.length === 0
       ? '暂无下载记录，将从当前时间开始'
@@ -251,6 +308,15 @@ export const BloggerManagement: React.FC = () => {
             onClick={onImport}
           >
             导入/刷新本地内容
+          </Button>
+        </Tooltip>
+        <Tooltip title="获取 X 列表成员或某账号的关注，批量加入博主列表">
+          <Button
+            size="small"
+            icon={<UsergroupAddOutlined />}
+            onClick={() => setImportUsersOpen(true)}
+          >
+            列表/关注导入
           </Button>
         </Tooltip>
         <Checkbox
@@ -414,8 +480,12 @@ export const BloggerManagement: React.FC = () => {
           onChange={(e) => setUseCustomStart(e.target.value === 'custom')}
         >
           <Radio value="auto">
-            各博主从自己的上次下载时间开始（推荐）
-            <span className="block text-xs text-gray-400">{autoRangeHint}</span>
+            各博主从自己的上次下载位置开始（推荐）
+            <span className="block text-xs text-gray-400">
+              {autoRangeHint}
+              {cursorCount > 0 &&
+                ` · ${cursorCount} 位博主有精确增量游标，将从上次抓取位置续传`}
+            </span>
           </Radio>
           <Radio value="custom">统一自定义开始时间</Radio>
         </Radio.Group>
@@ -430,6 +500,51 @@ export const BloggerManagement: React.FC = () => {
             className="w-full mt-2"
           />
         )}
+      </Modal>
+
+      <Modal
+        open={importUsersOpen}
+        title="从列表/关注导入博主"
+        okText="加入博主列表"
+        cancelText="取消"
+        okButtonProps={{ disabled: !importUsers?.length || importFetching }}
+        onOk={confirmImportUsers}
+        onCancel={() => setImportUsersOpen(false)}
+      >
+        <Radio.Group
+          className="mb-3"
+          value={importKind}
+          onChange={(e) => {
+            setImportKind(e.target.value);
+            setImportUsers(null);
+          }}
+        >
+          <Radio value="list">列表成员（输入列表 ID）</Radio>
+          <Radio value="following">某账号的关注（输入用户名）</Radio>
+        </Radio.Group>
+        <div className="flex gap-2">
+          <Input
+            placeholder={
+              importKind === 'list'
+                ? '例如 1234567890123456789'
+                : '例如 elonmusk'
+            }
+            value={importInput}
+            onChange={(e) => setImportInput(e.target.value)}
+            onPressEnter={fetchImportUsers}
+            disabled={importFetching}
+          />
+          <Button loading={importFetching} onClick={fetchImportUsers}>
+            获取
+          </Button>
+        </div>
+        <p className="mt-2 text-xs text-gray-400">
+          需要已登录的账号 Cookie，人数多时会分页获取、耗时较长。
+          {importFetching && ` 已获取 ${importProgress} 个用户…`}
+          {importUsers &&
+            !importFetching &&
+            ` 共获取 ${importUsers.length} 个用户，点击「加入博主列表」完成导入。`}
+        </p>
       </Modal>
     </div>
   );

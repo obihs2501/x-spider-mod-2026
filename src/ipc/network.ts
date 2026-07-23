@@ -45,6 +45,10 @@ export async function request(options: RequestOptions) {
 
   while (remainingRetryCount > 0) {
     try {
+      await options.beforeAttempt?.();
+      if (options.getHeaders) {
+        headers = await options.getHeaders();
+      }
       const res = await requestInternal(
         R.defaultTo('GET', options.method),
         url.href,
@@ -54,6 +58,7 @@ export async function request(options: RequestOptions) {
         headers,
         options.responseType,
       );
+      options.afterResponse?.(res);
 
       if (res.status === 429 && (await trySwitchHeadersOn429())) {
         log.warn('Got 429 response, switched account and retry');
