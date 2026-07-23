@@ -97,6 +97,7 @@ export const BloggerManagement: React.FC = () => {
 
   const [renamingGroup, setRenamingGroup] = useState<string | null>(null);
   const [renamingValue, setRenamingValue] = useState('');
+  const [createGroupOpen, setCreateGroupOpen] = useState(false);
   const [createGroupInput, setCreateGroupInput] = useState('');
 
   const fetchImportUsers = async () => {
@@ -273,32 +274,16 @@ export const BloggerManagement: React.FC = () => {
 
   const handleCreateGroup = () => {
     setCreateGroupInput('');
-    const modalInstance = modal.confirm({
-      title: '新建分组',
-      content: (
-        <Input
-          placeholder="分组名称"
-          autoFocus
-          value={createGroupInput}
-          onChange={(e) => setCreateGroupInput(e.target.value)}
-          onPressEnter={() => {
-            const name = createGroupInput.trim();
-            if (name) {
-              createGroup(name);
-              setCreateGroupInput('');
-              modalInstance.destroy();
-            }
-          }}
-        />
-      ),
-      onOk: () => {
-        const name = createGroupInput.trim();
-        if (name) {
-          createGroup(name);
-          setCreateGroupInput('');
-        }
-      },
-    });
+    setCreateGroupOpen(true);
+  };
+
+  const confirmCreateGroup = () => {
+    const name = createGroupInput.trim();
+    if (name) {
+      createGroup(name);
+      setCreateGroupInput('');
+      setCreateGroupOpen(false);
+    }
   };
 
   const handleRenameGroup = (id: string, oldName: string) => {
@@ -822,6 +807,26 @@ export const BloggerManagement: React.FC = () => {
             </div>
           )}
         </div>
+      </Modal>
+
+      <Modal
+        title="新建分组"
+        open={createGroupOpen}
+        onCancel={() => {
+          setCreateGroupOpen(false);
+          setCreateGroupInput('');
+        }}
+        onOk={confirmCreateGroup}
+        okText="确定"
+        cancelText="取消"
+      >
+        <Input
+          placeholder="分组名称"
+          autoFocus
+          value={createGroupInput}
+          onChange={(e) => setCreateGroupInput(e.target.value)}
+          onPressEnter={confirmCreateGroup}
+        />
       </Modal>
     </div>
   );
