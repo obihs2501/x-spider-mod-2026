@@ -3,7 +3,7 @@ import { dialog } from '@tauri-apps/api';
 import { Button, Select } from 'antd';
 import * as R from 'ramda';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { FixedSizeList } from 'react-window';
+import { FixedSizeList, ListChildComponentProps, areEqual } from 'react-window';
 import { DownloadTask } from '../../interfaces/DownloadTask';
 import { useDownloadStore } from '../../stores/download';
 import { CreationTasks } from './CreationTasks';
@@ -18,6 +18,22 @@ export interface DownloadListProps {
 }
 const ITEM_CLIENT_HEIGHT = 144;
 const ITEM_GAP = 16;
+
+// 行组件必须定义在组件外并 memo：内联函数每次渲染都是新的组件类型，
+// react-window 会把可见行整体卸载重建，悬停中的缩略图 hover 过渡被反复重放（表现为抖动）
+const Row = React.memo(
+  ({ index, style, data }: ListChildComponentProps<DownloadTask[]>) => (
+    <div style={style}>
+      <DownloadListItem
+        itemClientHeight={ITEM_CLIENT_HEIGHT}
+        itemGap={ITEM_GAP}
+        task={data[index]}
+      />
+    </div>
+  ),
+  areEqual,
+);
+Row.displayName = 'DownloadListRow';
 
 export const DownloadList: React.FC<DownloadListProps> = ({
   filter,
@@ -184,19 +200,7 @@ export const DownloadList: React.FC<DownloadListProps> = ({
             );
           }}
         >
-          {({ index, style, data }) => (
-            <div
-              style={{
-                ...style,
-              }}
-            >
-              <DownloadListItem
-                itemClientHeight={ITEM_CLIENT_HEIGHT}
-                itemGap={ITEM_GAP}
-                task={data[index]}
-              />
-            </div>
-          )}
+          {Row}
         </FixedSizeList>
       </div>
     </div>

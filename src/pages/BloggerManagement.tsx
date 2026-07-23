@@ -91,9 +91,13 @@ export const BloggerManagement: React.FC = () => {
     if (targets.length === 0) return;
     let defaultStart = Number.POSITIVE_INFINITY;
     for (const b of targets) {
-      const ts =
-        bloggerStats[b.screenName]?.latestFileAt || b.lastDownloadAt || 0;
-      if (ts < defaultStart) defaultStart = ts;
+      // 取「上次创建下载任务时间」与「本地最新文件日期」中较新者作为增量起点：
+      // latestFileAt 仅在重新扫描本地内容时更新，单独使用会一直停留在旧日期
+      const ts = Math.max(
+        bloggerStats[b.screenName]?.latestFileAt || 0,
+        b.lastDownloadAt || 0,
+      );
+      if (ts > 0 && ts < defaultStart) defaultStart = ts;
     }
     if (!Number.isFinite(defaultStart) || defaultStart <= 0) {
       defaultStart = Date.now();

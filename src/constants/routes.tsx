@@ -22,16 +22,16 @@ export const ROUTES: Route[] = [
     element: <Homepage />,
   },
   {
-    id: 'blogger-management',
-    name: '博主管理',
-    icon: <TeamOutlined />,
-    element: <BloggerManagement />,
-  },
-  {
     id: 'download-management',
     name: '下载管理',
     icon: <DownloadOutlined />,
     element: <DownloadManagement />,
+  },
+  {
+    id: 'blogger-management',
+    name: '博主管理',
+    icon: <TeamOutlined />,
+    element: <BloggerManagement />,
   },
   {
     id: 'gallery',

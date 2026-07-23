@@ -24,10 +24,10 @@ export interface DownloadListItemProps {
   itemGap: number;
 }
 
-export const DownloadListItem: React.FC<DownloadListItemProps> = ({
+export const DownloadListItem = React.memo(function DownloadListItem({
   task: t,
   itemClientHeight,
-}) => {
+}: DownloadListItemProps) {
   const { message } = App.useApp();
   const {
     removeDownloadTask,
@@ -242,4 +242,4 @@ export const DownloadListItem: React.FC<DownloadListItemProps> = ({
       </div>
     </div>
   );
-};
+});

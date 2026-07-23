@@ -663,16 +663,23 @@ async function scheduleAutoSyncTasks() {
   const newTasks = await Promise.all(
     downloadTasks.map<Promise<DownloadTask>>(async (oldTask) => {
       if (oldTask.updatedAt > now) return oldTask;
-      if (!resultMap[oldTask.gid]) return oldTask;
-      return mergeAriaStatusToDownloadTask(
-        resultMap[oldTask.gid],
-        oldTask,
-        now,
-      );
+      const status = resultMap[oldTask.gid];
+      if (!status) return oldTask;
+      // 状态与进度均无变化时保留原对象，避免 updatedAt 被刷新导致列表重排、重渲染
+      if (
+        status.status === oldTask.status &&
+        Number(status.completedLength) === oldTask.completeSize &&
+        Number(status.totalLength) === oldTask.totalSize
+      ) {
+        return oldTask;
+      }
+      return mergeAriaStatusToDownloadTask(status, oldTask, now);
     }),
   );
 
-  batchUpdateDownloadTasks(newTasks);
+  if (newTasks.some((task, index) => task !== downloadTasks[index])) {
+    batchUpdateDownloadTasks(newTasks);
+  }
 
   setTimeout(scheduleAutoSyncTasks, INTERVAL);
 }
