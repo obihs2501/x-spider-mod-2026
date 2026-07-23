@@ -15,16 +15,30 @@ export interface BloggerRecord {
    * 增量下载扫到不晚于它的推文即停，比日期精确。
    */
   lastSeenTweetId?: string;
+  /** 所属分组 ID */
+  groupId?: string;
+}
+
+export interface BloggerGroup {
+  id: string;
+  name: string;
+  collapsed: boolean;
 }
 
 export interface BloggerStore {
   bloggers: BloggerRecord[];
+  groups: BloggerGroup[];
   recordDownload: (user: TwitterUser) => void;
   /** 任务完整结束后推进增量游标（只前进不后退） */
   recordSeenTweet: (screenName: string, tweetId: string) => void;
   /** 批量导入博主（跳过已存在的），返回新增数量 */
   importBloggers: (users: TwitterUser[]) => number;
   removeBlogger: (screenName: string) => void;
+  createGroup: (name: string) => string;
+  removeGroup: (id: string) => void;
+  renameGroup: (id: string, name: string) => void;
+  toggleGroupCollapse: (id: string) => void;
+  moveBloggerToGroup: (screenName: string, groupId: string | null) => void;
 }
 
 /** 雪花 ID 比较：a 是否比 b 更新；解析失败按不更新处理 */
@@ -42,6 +56,7 @@ export const useBloggerStore = create<BloggerStore>()(
   persist(
     (set, get) => ({
       bloggers: [],
+      groups: [],
       recordDownload: (user) => {
         if (!user?.screenName) return;
         const existing = get().bloggers.find(
@@ -99,11 +114,45 @@ export const useBloggerStore = create<BloggerStore>()(
           bloggers: get().bloggers.filter((b) => b.screenName !== screenName),
         });
       },
+      createGroup: (name) => {
+        const id = `g-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+        set({ groups: [...get().groups, { id, name, collapsed: false }] });
+        return id;
+      },
+      removeGroup: (id) => {
+        set({
+          groups: get().groups.filter((g) => g.id !== id),
+          bloggers: get().bloggers.map((b) =>
+            b.groupId === id ? { ...b, groupId: undefined } : b,
+          ),
+        });
+      },
+      renameGroup: (id, name) => {
+        set({
+          groups: get().groups.map((g) => (g.id === id ? { ...g, name } : g)),
+        });
+      },
+      toggleGroupCollapse: (id) => {
+        set({
+          groups: get().groups.map((g) =>
+            g.id === id ? { ...g, collapsed: !g.collapsed } : g,
+          ),
+        });
+      },
+      moveBloggerToGroup: (screenName, groupId) => {
+        set({
+          bloggers: get().bloggers.map((b) =>
+            b.screenName === screenName
+              ? { ...b, groupId: groupId || undefined }
+              : b,
+          ),
+        });
+      },
     }),
     {
       name: 'bloggers',
       storage: createTauriFileStorage(),
-      version: 1,
+      version: 2,
     },
   ),
 );

@@ -7,6 +7,11 @@ import {
   SearchOutlined,
   AppstoreOutlined,
   UsergroupAddOutlined,
+  FolderAddOutlined,
+  EditOutlined,
+  CaretRightOutlined,
+  CaretDownOutlined,
+  DragOutlined,
 } from '@ant-design/icons';
 import { fs, shell } from '@tauri-apps/api';
 import {
@@ -22,6 +27,8 @@ import {
   Progress,
   Radio,
   Tooltip,
+  Dropdown,
+  Space,
 } from 'antd';
 import dayjs, { Dayjs } from 'dayjs';
 import React, { useMemo, useState } from 'react';
@@ -40,7 +47,16 @@ import { delay } from '../utils';
 
 export const BloggerManagement: React.FC = () => {
   const { message, modal } = App.useApp();
-  const { bloggers, removeBlogger } = useBloggerStore();
+  const {
+    bloggers,
+    groups,
+    removeBlogger,
+    createGroup,
+    removeGroup,
+    renameGroup,
+    toggleGroupCollapse,
+    moveBloggerToGroup,
+  } = useBloggerStore();
   const createCreationTask = useDownloadStore((s) => s.createCreationTask);
   const saveDirBase = useSettingsStore((s) => s.download.saveDirBase);
   const { postIdCount, importFromDisk, bloggerStats } = useLocalIndexStore(
@@ -78,6 +94,10 @@ export const BloggerManagement: React.FC = () => {
   const [importFetching, setImportFetching] = useState(false);
   const [importProgress, setImportProgress] = useState(0);
   const [importUsers, setImportUsers] = useState<TwitterUser[] | null>(null);
+
+  const [renamingGroup, setRenamingGroup] = useState<string | null>(null);
+  const [renamingValue, setRenamingValue] = useState('');
+  const [createGroupInput, setCreateGroupInput] = useState('');
 
   const fetchImportUsers = async () => {
     const input = importInput.trim().replace(/^@/, '');
@@ -158,6 +178,12 @@ export const BloggerManagement: React.FC = () => {
     setIncrementalStart(dayjs(defaultStart));
   };
 
+  /**
+   * 创建增量下载任务。
+   * - 有游标（lastSeenTweetId）时优先用游标精确截断（扫到该推文即停止翻页），
+   *   dateRange 仍传入但仅作辅助过滤（下载器会取两者的交集）；
+   * - 无游标时纯按日期范围抓取。
+   */
   const createIncremental = async (
     b: BloggerRecord,
     since: Dayjs,
@@ -165,39 +191,33 @@ export const BloggerManagement: React.FC = () => {
   ) => {
     const user = await getUser(b.screenName);
     createCreationTask(user, {
-      source: 'medias',
       mediaTypes: [MediaType.Photo, MediaType.Video, MediaType.Gif],
-      // 有游标时用游标精确截断（日期只会漏或多抓），无游标才用日期范围
-      dateRange: stopAtTweetId ? undefined : [since, dayjs()],
+      dateRange: [since, dayjs()],
+      source: 'medias' as const,
       stopAtTweetId,
     });
   };
 
-  const confirmIncremental = async () => {
-    const targets = incrementalTargets;
-    if (targets.length === 0) return;
-    setIncrementalTargets([]);
-    setBatchProgress({ current: 0, total: targets.length });
+  const startBatchIncremental = async () => {
+    if (incrementalTargets.length === 0) return;
+    setIncLoading('batch');
+    setBatchProgress({ current: 0, total: incrementalTargets.length });
     const failed: string[] = [];
-    for (let i = 0; i < targets.length; i++) {
-      const b = targets[i];
-      setIncLoading(b.screenName);
+    for (let i = 0; i < incrementalTargets.length; i++) {
+      setBatchProgress({ current: i + 1, total: incrementalTargets.length });
+      const b = incrementalTargets[i];
       try {
-        // 默认各博主用自己的起点，避免一个长期无更新（如被封号）的博主拖累整批；
-        // 自定义统一时间时不用游标，按用户显式选择的日期抓取
-        const ts = getBloggerStartTs(b);
-        const since = useCustomStart || ts <= 0 ? incrementalStart : dayjs(ts);
-        const stopAtTweetId = useCustomStart ? undefined : b.lastSeenTweetId;
-        await createIncremental(b, since, stopAtTweetId);
+        const since = useCustomStart
+          ? incrementalStart
+          : dayjs(getBloggerStartTs(b) || Date.now());
+        await createIncremental(b, since, b.lastSeenTweetId);
+        await delay(1200 + Math.floor(Math.random() * 1800));
       } catch (err: any) {
         log.error(err);
-        failed.push(`@${b.screenName}`);
-      }
-      setBatchProgress({ current: i + 1, total: targets.length });
-      if (i < targets.length - 1) {
-        await delay(1200 + Math.floor(Math.random() * 1800));
+        failed.push(b.screenName);
       }
     }
+    setIncrementalTargets([]);
     setIncLoading('');
     setBatchProgress(null);
     if (failed.length) {
@@ -205,7 +225,9 @@ export const BloggerManagement: React.FC = () => {
         `任务创建完成，失败：${failed.join('、')}（账号可能已被封禁、改名或注销，可从列表移除）`,
       );
     } else {
-      message.success(`已创建 ${targets.length} 位博主的增量下载任务`);
+      message.success(
+        `已创建 ${incrementalTargets.length} 位博主的增量下载任务`,
+      );
     }
   };
 
@@ -249,6 +271,57 @@ export const BloggerManagement: React.FC = () => {
     }
   };
 
+  const handleCreateGroup = () => {
+    setCreateGroupInput('');
+    const modalInstance = modal.confirm({
+      title: '新建分组',
+      content: (
+        <Input
+          placeholder="分组名称"
+          autoFocus
+          value={createGroupInput}
+          onChange={(e) => setCreateGroupInput(e.target.value)}
+          onPressEnter={() => {
+            const name = createGroupInput.trim();
+            if (name) {
+              createGroup(name);
+              setCreateGroupInput('');
+              modalInstance.destroy();
+            }
+          }}
+        />
+      ),
+      onOk: () => {
+        const name = createGroupInput.trim();
+        if (name) {
+          createGroup(name);
+          setCreateGroupInput('');
+        }
+      },
+    });
+  };
+
+  const handleRenameGroup = (id: string, oldName: string) => {
+    setRenamingGroup(id);
+    setRenamingValue(oldName);
+  };
+
+  const confirmRenameGroup = () => {
+    if (renamingGroup && renamingValue.trim()) {
+      renameGroup(renamingGroup, renamingValue.trim());
+    }
+    setRenamingGroup(null);
+    setRenamingValue('');
+  };
+
+  const handleRemoveGroup = (id: string, name: string) => {
+    modal.confirm({
+      title: `删除分组「${name}」？`,
+      content: '分组中的博主会移至未分组列表，不会被删除。',
+      onOk: () => removeGroup(id),
+    });
+  };
+
   const filtered = useMemo(
     () =>
       search
@@ -260,6 +333,16 @@ export const BloggerManagement: React.FC = () => {
         : bloggers,
     [bloggers, search],
   );
+
+  const groupedBloggers = useMemo(() => {
+    const ungrouped = filtered.filter((b) => !b.groupId);
+    const grouped = groups.map((g) => ({
+      group: g,
+      bloggers: filtered.filter((b) => b.groupId === g.id),
+    }));
+    return { ungrouped, grouped };
+  }, [filtered, groups]);
+
   const allFilteredSelected =
     filtered.length > 0 &&
     filtered.every((b) => selected.includes(b.screenName));
@@ -291,6 +374,124 @@ export const BloggerManagement: React.FC = () => {
             Math.max(...autoStartTss),
           ).format('YYYY-MM-DD HH:mm')}`;
 
+  const renderBloggerItem = (b: BloggerRecord) => {
+    const isIncLoading = incLoading === b.screenName;
+    const isHomeLoading = homepageLoading === b.screenName;
+    const isSelected = selected.includes(b.screenName);
+    const stats = bloggerStats[b.screenName];
+
+    return (
+      <List.Item
+        key={b.screenName}
+        className="hover:bg-gray-50 dark:hover:bg-gray-800 px-4"
+        actions={[
+          <Tooltip key="inc" title="增量下载">
+            <Button
+              type="text"
+              size="small"
+              icon={<CloudDownloadOutlined />}
+              loading={isIncLoading}
+              onClick={() => openIncrementalDialog([b])}
+            />
+          </Tooltip>,
+          <Tooltip key="folder" title="打开本地文件夹">
+            <Button
+              type="text"
+              size="small"
+              icon={<FolderOpenOutlined />}
+              onClick={() => openLocalFolder(b)}
+            />
+          </Tooltip>,
+          <Tooltip key="gallery" title="在画廊中查看">
+            <Button
+              type="text"
+              size="small"
+              icon={<AppstoreOutlined />}
+              onClick={() => openInGallery(b)}
+            />
+          </Tooltip>,
+          <Tooltip key="homepage" title="跳转主页预览">
+            <Button
+              type="text"
+              size="small"
+              icon={<SearchOutlined />}
+              loading={isHomeLoading}
+              onClick={() => gotoHomepage(b.screenName)}
+            />
+          </Tooltip>,
+          <Dropdown
+            key="move"
+            menu={{
+              items: [
+                { key: 'none', label: '取消分组' },
+                { type: 'divider' },
+                ...groups.map((g) => ({ key: g.id, label: g.name })),
+              ],
+              onClick: ({ key }) =>
+                moveBloggerToGroup(b.screenName, key === 'none' ? null : key),
+            }}
+            trigger={['click']}
+          >
+            <Button type="text" size="small" icon={<DragOutlined />} />
+          </Dropdown>,
+          <Button
+            key="del"
+            type="text"
+            size="small"
+            danger
+            icon={<DeleteOutlined />}
+            onClick={() => {
+              modal.confirm({
+                title: `从列表移除 ${b.screenName}？`,
+                content: '不会删除本地文件。',
+                onOk: () => removeBlogger(b.screenName),
+              });
+            }}
+          />,
+        ]}
+      >
+        <List.Item.Meta
+          avatar={
+            <Checkbox
+              checked={isSelected}
+              onChange={(e) =>
+                setSelected(
+                  e.target.checked
+                    ? [...selected, b.screenName]
+                    : selected.filter((s) => s !== b.screenName),
+                )
+              }
+              onClick={(e) => e.stopPropagation()}
+              className="mr-2"
+            />
+          }
+          title={
+            <Space>
+              {b.avatar && <Avatar size="small" src={b.avatar} />}
+              <span className="font-semibold">@{b.screenName}</span>
+              {b.name && <span className="text-gray-500">{b.name}</span>}
+            </Space>
+          }
+          description={
+            <div className="text-xs text-gray-400 space-x-3">
+              {stats && <span>本地 {stats.postCount} 帖</span>}
+              {b.lastDownloadAt > 0 && (
+                <span>
+                  上次下载 {dayjs(b.lastDownloadAt).format('YYYY-MM-DD HH:mm')}
+                </span>
+              )}
+              {b.lastSeenTweetId && (
+                <Tooltip title={`游标 ID: ${b.lastSeenTweetId}`}>
+                  <span className="text-green-600">已记游标</span>
+                </Tooltip>
+              )}
+            </div>
+          }
+        />
+      </List.Item>
+    );
+  };
+
   return (
     <div className="flex flex-col h-screen">
       <PageHeader />
@@ -317,6 +518,15 @@ export const BloggerManagement: React.FC = () => {
             onClick={() => setImportUsersOpen(true)}
           >
             列表/关注导入
+          </Button>
+        </Tooltip>
+        <Tooltip title="创建分组">
+          <Button
+            size="small"
+            icon={<FolderAddOutlined />}
+            onClick={handleCreateGroup}
+          >
+            新建分组
           </Button>
         </Tooltip>
         <Checkbox
@@ -347,204 +557,222 @@ export const BloggerManagement: React.FC = () => {
           disabled={selected.length === 0}
           onClick={removeSelected}
         >
-          批量移除
+          移除选中（{selected.length}）
         </Button>
-        <Input
-          size="small"
-          allowClear
-          prefix={<SearchOutlined />}
-          placeholder="搜索博主"
-          className="max-w-[200px] ml-auto"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
       </div>
+      <Input
+        placeholder="搜索博主用户名或昵称"
+        prefix={<SearchOutlined />}
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        allowClear
+        className="mb-3"
+      />
 
-      {batchProgress && (
-        <Progress
-          className="mb-3"
-          percent={Math.round(
-            (batchProgress.current / batchProgress.total) * 100,
-          )}
-          format={() => `${batchProgress.current}/${batchProgress.total}`}
-        />
-      )}
-
-      <div className="grow overflow-auto pb-6">
+      <div className="flex-1 overflow-y-auto">
         {filtered.length === 0 ? (
-          <Empty className="mt-20" description="暂无匹配的博主记录" />
+          <Empty description="无博主或搜索无结果" />
         ) : (
-          <List
-            dataSource={filtered}
-            className="bg-white border-[1px] border-[#E8E6DC] rounded-xl px-4"
-            renderItem={(b) => {
-              const stats = bloggerStats[b.screenName];
-              return (
-                <List.Item
-                  actions={[
+          <div className="space-y-4">
+            {groupedBloggers.grouped.map(({ group, bloggers: gBloggers }) => (
+              <div key={group.id} className="border rounded-lg">
+                <div className="flex items-center justify-between px-4 py-2 bg-gray-100 dark:bg-gray-800 cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700">
+                  <Space
+                    onClick={() => toggleGroupCollapse(group.id)}
+                    className="flex-1"
+                  >
+                    {group.collapsed ? (
+                      <CaretRightOutlined />
+                    ) : (
+                      <CaretDownOutlined />
+                    )}
+                    {renamingGroup === group.id ? (
+                      <Input
+                        size="small"
+                        value={renamingValue}
+                        onChange={(e) => setRenamingValue(e.target.value)}
+                        onBlur={confirmRenameGroup}
+                        onPressEnter={confirmRenameGroup}
+                        onClick={(e) => e.stopPropagation()}
+                        autoFocus
+                        style={{ width: 150 }}
+                      />
+                    ) : (
+                      <span className="font-semibold">
+                        {group.name} ({gBloggers.length})
+                      </span>
+                    )}
+                  </Space>
+                  <Space>
                     <Button
-                      key="gallery"
-                      size="small"
-                      icon={<AppstoreOutlined />}
-                      onClick={() => openInGallery(b)}
-                      title="在画廊查看"
-                    >
-                      画廊查看
-                    </Button>,
-                    <Button
-                      key="folder"
-                      size="small"
-                      icon={<FolderOpenOutlined />}
-                      onClick={() => openLocalFolder(b)}
-                      title="用文件管理器打开"
-                    >
-                      本地文件夹
-                    </Button>,
-                    <Button
-                      key="inc"
-                      size="small"
-                      type="primary"
-                      ghost
-                      icon={<CloudDownloadOutlined />}
-                      loading={incLoading === b.screenName}
-                      onClick={() => openIncrementalDialog([b])}
-                    >
-                      增量下载
-                    </Button>,
-                    <Button
-                      key="del"
-                      size="small"
                       type="text"
+                      size="small"
+                      icon={<EditOutlined />}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleRenameGroup(group.id, group.name);
+                      }}
+                    />
+                    <Button
+                      type="text"
+                      size="small"
                       danger
                       icon={<DeleteOutlined />}
-                      onClick={() => removeBlogger(b.screenName)}
-                      title="从列表移除（不删除本地文件）"
-                    />,
-                  ]}
-                >
-                  <Checkbox
-                    className="mr-3"
-                    checked={selected.includes(b.screenName)}
-                    onChange={(e) =>
-                      setSelected((old) =>
-                        e.target.checked
-                          ? [...new Set([...old, b.screenName])]
-                          : old.filter((sn) => sn !== b.screenName),
-                      )
-                    }
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleRemoveGroup(group.id, group.name);
+                      }}
+                    />
+                  </Space>
+                </div>
+                {!group.collapsed && gBloggers.length > 0 && (
+                  <List
+                    dataSource={gBloggers}
+                    renderItem={renderBloggerItem}
+                    size="small"
                   />
-                  <List.Item.Meta
-                    avatar={
-                      <Avatar src={b.avatar} size={40}>
-                        {b.screenName[0]?.toUpperCase()}
-                      </Avatar>
-                    }
-                    title={
-                      <button
-                        className="bg-transparent hover:text-ant-color-primary transition-colors disabled:opacity-50"
-                        disabled={homepageLoading === b.screenName}
-                        onClick={() => gotoHomepage(b.screenName)}
-                      >
-                        {b.name || b.screenName}
-                        <span className="text-gray-400 font-normal ml-2">
-                          @{b.screenName}
-                        </span>
-                      </button>
-                    }
-                    description={`上次下载：${dayjs(b.lastDownloadAt).format(
-                      'YYYY-MM-DD HH:mm',
-                    )} · 本地媒体 ${stats?.mediaCount || 0} 个 · ${
-                      stats?.postCount || 0
-                    } 个帖子`}
-                  />
-                </List.Item>
-              );
-            }}
-          />
+                )}
+              </div>
+            ))}
+
+            {groupedBloggers.ungrouped.length > 0 && (
+              <div>
+                {groups.length > 0 && (
+                  <div className="px-4 py-2 text-sm text-gray-500 font-semibold">
+                    未分组 ({groupedBloggers.ungrouped.length})
+                  </div>
+                )}
+                <List
+                  dataSource={groupedBloggers.ungrouped}
+                  renderItem={renderBloggerItem}
+                  size="small"
+                />
+              </div>
+            )}
+          </div>
         )}
       </div>
 
       <Modal
+        title="增量下载"
         open={incrementalTargets.length > 0}
-        title={`增量下载（${incrementalTargets.length} 位博主）`}
-        okText="创建任务"
-        cancelText="取消"
-        confirmLoading={!!incLoading}
-        onOk={confirmIncremental}
         onCancel={() => setIncrementalTargets([])}
+        onOk={startBatchIncremental}
+        confirmLoading={incLoading === 'batch'}
+        okText="开始下载"
+        width={600}
       >
-        <p className="mb-2">增量开始时间：</p>
-        <Radio.Group
-          className="flex flex-col gap-2"
-          value={useCustomStart ? 'custom' : 'auto'}
-          onChange={(e) => setUseCustomStart(e.target.value === 'custom')}
-        >
-          <Radio value="auto">
-            各博主从自己的上次下载位置开始（推荐）
-            <span className="block text-xs text-gray-400">
-              {autoRangeHint}
-              {cursorCount > 0 &&
-                ` · ${cursorCount} 位博主有精确增量游标，将从上次抓取位置续传`}
-            </span>
-          </Radio>
-          <Radio value="custom">统一自定义开始时间</Radio>
-        </Radio.Group>
-        {useCustomStart && (
-          <DatePicker
-            showTime
-            value={incrementalStart}
-            onChange={(value) => value && setIncrementalStart(value)}
-            disabledDate={(current) =>
-              current && current > dayjs().endOf('day')
-            }
-            className="w-full mt-2"
-          />
-        )}
+        <div className="space-y-3">
+          <p>
+            已选择 <strong>{incrementalTargets.length}</strong> 位博主
+            {cursorCount > 0 && (
+              <span className="text-green-600">
+                （{cursorCount} 位有增量游标，将精确续传）
+              </span>
+            )}
+          </p>
+          <Radio.Group
+            value={useCustomStart}
+            onChange={(e) => setUseCustomStart(e.target.value)}
+          >
+            <Space direction="vertical">
+              <Radio value={false}>
+                各博主从自己的上次下载时间开始
+                <div className="text-xs text-gray-400 ml-6">
+                  {autoRangeHint}
+                </div>
+              </Radio>
+              <Radio value={true}>统一自定义时间</Radio>
+            </Space>
+          </Radio.Group>
+          {useCustomStart && (
+            <DatePicker
+              showTime
+              value={incrementalStart}
+              onChange={(v) => v && setIncrementalStart(v)}
+              className="w-full"
+            />
+          )}
+          {batchProgress && (
+            <Progress
+              percent={Math.round(
+                (batchProgress.current / batchProgress.total) * 100,
+              )}
+              status="active"
+              format={() => `${batchProgress.current}/${batchProgress.total}`}
+            />
+          )}
+        </div>
       </Modal>
 
       <Modal
+        title={importKind === 'list' ? '导入 X 列表成员' : '导入关注的用户'}
         open={importUsersOpen}
-        title="从列表/关注导入博主"
-        okText="加入博主列表"
-        cancelText="取消"
-        okButtonProps={{ disabled: !importUsers?.length || importFetching }}
-        onOk={confirmImportUsers}
-        onCancel={() => setImportUsersOpen(false)}
+        onCancel={() => {
+          setImportUsersOpen(false);
+          setImportUsers(null);
+          setImportInput('');
+        }}
+        footer={
+          importUsers ? (
+            <Button type="primary" onClick={confirmImportUsers}>
+              确认导入 {importUsers.length} 位博主
+            </Button>
+          ) : null
+        }
+        width={700}
       >
-        <Radio.Group
-          className="mb-3"
-          value={importKind}
-          onChange={(e) => {
-            setImportKind(e.target.value);
-            setImportUsers(null);
-          }}
-        >
-          <Radio value="list">列表成员（输入列表 ID）</Radio>
-          <Radio value="following">某账号的关注（输入用户名）</Radio>
-        </Radio.Group>
-        <div className="flex gap-2">
+        <div className="space-y-3">
+          <Radio.Group
+            value={importKind}
+            onChange={(e) => setImportKind(e.target.value)}
+          >
+            <Radio value="list">列表 ID</Radio>
+            <Radio value="following">账号用户名</Radio>
+          </Radio.Group>
           <Input
             placeholder={
               importKind === 'list'
-                ? '例如 1234567890123456789'
-                : '例如 elonmusk'
+                ? '输入列表 ID（URL 中的数字）'
+                : '输入账号用户名（@xxx）'
             }
             value={importInput}
             onChange={(e) => setImportInput(e.target.value)}
             onPressEnter={fetchImportUsers}
-            disabled={importFetching}
           />
-          <Button loading={importFetching} onClick={fetchImportUsers}>
+          <Button
+            type="primary"
+            block
+            loading={importFetching}
+            onClick={fetchImportUsers}
+          >
             获取
           </Button>
+          {importFetching && (
+            <Progress
+              percent={importProgress}
+              status="active"
+              format={(p) => `已获取 ${p} 位`}
+            />
+          )}
+          {importUsers && (
+            <div className="max-h-96 overflow-y-auto border rounded p-2">
+              <List
+                dataSource={importUsers}
+                renderItem={(u) => (
+                  <List.Item key={u.screenName}>
+                    <List.Item.Meta
+                      avatar={<Avatar size="small" src={u.avatar} />}
+                      title={`@${u.screenName}`}
+                      description={u.name}
+                    />
+                  </List.Item>
+                )}
+                size="small"
+              />
+            </div>
+          )}
         </div>
-        <p className="mt-2 text-xs text-gray-400">
-          需要已登录的账号 Cookie，人数多时会分页获取、耗时较长。
-          {importFetching && ` 已获取 ${importProgress} 个用户…`}
-          {importUsers &&
-            !importFetching &&
-            ` 共获取 ${importUsers.length} 个用户，点击「加入博主列表」完成导入。`}
-        </p>
       </Modal>
     </div>
   );
