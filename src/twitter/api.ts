@@ -587,6 +587,14 @@ export async function getTweetDetail(tweetId: string): Promise<TwitterPost> {
         withCommunity: false,
         includePromotedContent: false,
         withVoice: false,
+        // 2026-07 起服务端要求以下变量必须定义，缺失会返回 422 GRAPHQL_VALIDATION_FAILED
+        withDownvotePerspective: false,
+        withReactionsMetadata: false,
+        withReactionsPerspective: false,
+        withSuperFollowsTweetFields: false,
+        withSuperFollowsUserFields: false,
+        withBirdwatchNotes: false,
+        withQuickPromoteEligibilityTweetFields: false,
       }),
       features: JSON.stringify({
         creator_subscriptions_tweet_preview_api_enabled: true,

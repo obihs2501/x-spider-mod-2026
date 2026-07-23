@@ -19,6 +19,7 @@ import {
   List,
   Modal,
   Progress,
+  Radio,
   Tooltip,
 } from 'antd';
 import dayjs, { Dayjs } from 'dayjs';
@@ -63,6 +64,7 @@ export const BloggerManagement: React.FC = () => {
     [],
   );
   const [incrementalStart, setIncrementalStart] = useState<Dayjs>(dayjs());
+  const [useCustomStart, setUseCustomStart] = useState(false);
   const [batchProgress, setBatchProgress] = useState<{
     current: number;
     total: number;
@@ -87,21 +89,25 @@ export const BloggerManagement: React.FC = () => {
     }
   };
 
+  // 单个博主的增量起点：上次创建下载任务时间与本地最新文件日期中较新者
+  // （latestFileAt 仅在重新扫描本地内容时更新，单独使用会一直停留在旧日期）
+  const getBloggerStartTs = (b: BloggerRecord) =>
+    Math.max(
+      bloggerStats[b.screenName]?.latestFileAt || 0,
+      b.lastDownloadAt || 0,
+    );
+
   const openIncrementalDialog = (targets: BloggerRecord[]) => {
     if (targets.length === 0) return;
     let defaultStart = Number.POSITIVE_INFINITY;
     for (const b of targets) {
-      // 取「上次创建下载任务时间」与「本地最新文件日期」中较新者作为增量起点：
-      // latestFileAt 仅在重新扫描本地内容时更新，单独使用会一直停留在旧日期
-      const ts = Math.max(
-        bloggerStats[b.screenName]?.latestFileAt || 0,
-        b.lastDownloadAt || 0,
-      );
+      const ts = getBloggerStartTs(b);
       if (ts > 0 && ts < defaultStart) defaultStart = ts;
     }
     if (!Number.isFinite(defaultStart) || defaultStart <= 0) {
       defaultStart = Date.now();
     }
+    setUseCustomStart(false);
     setIncrementalTargets(targets);
     setIncrementalStart(dayjs(defaultStart));
   };
@@ -125,7 +131,10 @@ export const BloggerManagement: React.FC = () => {
       const b = targets[i];
       setIncLoading(b.screenName);
       try {
-        await createIncremental(b, incrementalStart);
+        // 默认各博主用自己的起点，避免一个长期无更新（如被封号）的博主拖累整批
+        const ts = getBloggerStartTs(b);
+        const since = useCustomStart || ts <= 0 ? incrementalStart : dayjs(ts);
+        await createIncremental(b, since);
       } catch (err: any) {
         log.error(err);
         failed.push(`@${b.screenName}`);
@@ -138,7 +147,9 @@ export const BloggerManagement: React.FC = () => {
     setIncLoading('');
     setBatchProgress(null);
     if (failed.length) {
-      message.warning(`任务创建完成，失败：${failed.join('、')}`);
+      message.warning(
+        `任务创建完成，失败：${failed.join('、')}（账号可能已被封禁、改名或注销，可从列表移除）`,
+      );
     } else {
       message.success(`已创建 ${targets.length} 位博主的增量下载任务`);
     }
@@ -209,6 +220,19 @@ export const BloggerManagement: React.FC = () => {
       },
     });
   };
+
+  const autoStartTss = incrementalTargets
+    .map(getBloggerStartTs)
+    .filter((ts) => ts > 0);
+  const autoRangeHint =
+    autoStartTss.length === 0
+      ? '暂无下载记录，将从当前时间开始'
+      : autoStartTss.length === 1 ||
+          Math.min(...autoStartTss) === Math.max(...autoStartTss)
+        ? `将从 ${dayjs(Math.min(...autoStartTss)).format('YYYY-MM-DD HH:mm')} 开始`
+        : `最早 ${dayjs(Math.min(...autoStartTss)).format('YYYY-MM-DD HH:mm')} · 最晚 ${dayjs(
+            Math.max(...autoStartTss),
+          ).format('YYYY-MM-DD HH:mm')}`;
 
   return (
     <div className="flex flex-col h-screen">
@@ -383,14 +407,29 @@ export const BloggerManagement: React.FC = () => {
         onOk={confirmIncremental}
         onCancel={() => setIncrementalTargets([])}
       >
-        <p className="mb-2">自定义增量开始时间：</p>
-        <DatePicker
-          showTime
-          value={incrementalStart}
-          onChange={(value) => value && setIncrementalStart(value)}
-          disabledDate={(current) => current && current > dayjs().endOf('day')}
-          className="w-full"
-        />
+        <p className="mb-2">增量开始时间：</p>
+        <Radio.Group
+          className="flex flex-col gap-2"
+          value={useCustomStart ? 'custom' : 'auto'}
+          onChange={(e) => setUseCustomStart(e.target.value === 'custom')}
+        >
+          <Radio value="auto">
+            各博主从自己的上次下载时间开始（推荐）
+            <span className="block text-xs text-gray-400">{autoRangeHint}</span>
+          </Radio>
+          <Radio value="custom">统一自定义开始时间</Radio>
+        </Radio.Group>
+        {useCustomStart && (
+          <DatePicker
+            showTime
+            value={incrementalStart}
+            onChange={(value) => value && setIncrementalStart(value)}
+            disabledDate={(current) =>
+              current && current > dayjs().endOf('day')
+            }
+            className="w-full mt-2"
+          />
+        )}
       </Modal>
     </div>
   );

@@ -79,5 +79,5 @@ jobs:
           TAG="v${VERSION}-build.${GITHUB_RUN_NUMBER}"
           gh release create "$TAG" ./src-tauri/target/release/bundle/nsis/* \
             --title "$TAG" \
-            --notes "自动构建版本。本次更新：修复下载管理缩略图悬停抖动（消除列表行反复重挂载与无变化时的轮询刷新）；博主管理增量下载默认时间改为取上次下载时间与本地最新文件日期中较新者，不再固定为旧文件日期；侧边栏下载管理与博主管理位置互换。" \
+            --notes "自动构建版本。本次更新：修复帖子解析 422 报错（X 服务端更新了 TweetResultByRestId 必填变量，已实测补齐，公开帖子无 Cookie 解析仍可用）；批量增量下载默认改为各博主从自己的上次下载时间开始，被封号/无更新的博主不再把整批起点拖回旧日期，仍可切换为统一自定义时间；创建失败提示补充封号/改名说明。" \
             --latest
