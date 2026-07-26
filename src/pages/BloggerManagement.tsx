@@ -24,7 +24,6 @@ import {
   Input,
   List,
   Modal,
-  Progress,
   Radio,
   Tooltip,
   Dropdown,
@@ -83,16 +82,10 @@ export const BloggerManagement: React.FC = () => {
   );
   const [incrementalStart, setIncrementalStart] = useState<Dayjs>(dayjs());
   const [useCustomStart, setUseCustomStart] = useState(false);
-  const [batchProgress, setBatchProgress] = useState<{
-    current: number;
-    total: number;
-  } | null>(null);
-
   const [importUsersOpen, setImportUsersOpen] = useState(false);
   const [importKind, setImportKind] = useState<'list' | 'following'>('list');
   const [importInput, setImportInput] = useState('');
   const [importFetching, setImportFetching] = useState(false);
-  const [importProgress, setImportProgress] = useState(0);
   const [importUsers, setImportUsers] = useState<TwitterUser[] | null>(null);
 
   const [renamingGroup, setRenamingGroup] = useState<string | null>(null);
@@ -105,14 +98,13 @@ export const BloggerManagement: React.FC = () => {
     if (!input) return;
     setImportFetching(true);
     setImportUsers(null);
-    setImportProgress(0);
     try {
       let users: TwitterUser[];
       if (importKind === 'list') {
-        users = await getListMembers(input, setImportProgress);
+        users = await getListMembers(input);
       } else {
         const target = await getUser(input);
-        users = await getFollowing(target.id, setImportProgress);
+        users = await getFollowing(target.id);
       }
       setImportUsers(users);
       if (users.length === 0) {
@@ -202,11 +194,8 @@ export const BloggerManagement: React.FC = () => {
   const startBatchIncremental = async () => {
     if (incrementalTargets.length === 0) return;
     setIncLoading('batch');
-    setBatchProgress({ current: 0, total: incrementalTargets.length });
     const failed: string[] = [];
-    for (let i = 0; i < incrementalTargets.length; i++) {
-      setBatchProgress({ current: i + 1, total: incrementalTargets.length });
-      const b = incrementalTargets[i];
+    for (const b of incrementalTargets) {
       try {
         const since = useCustomStart
           ? incrementalStart
@@ -220,7 +209,6 @@ export const BloggerManagement: React.FC = () => {
     }
     setIncrementalTargets([]);
     setIncLoading('');
-    setBatchProgress(null);
     if (failed.length) {
       message.warning(
         `任务创建完成，失败：${failed.join('、')}（账号可能已被封禁、改名或注销，可从列表移除）`,
@@ -639,6 +627,49 @@ export const BloggerManagement: React.FC = () => {
                     )}
                   </Space>
                   <Space size="small">
+                    <Checkbox
+                      checked={gBloggers.every((b) =>
+                        selected.includes(b.screenName),
+                      )}
+                      indeterminate={
+                        gBloggers.some((b) =>
+                          selected.includes(b.screenName),
+                        ) &&
+                        !gBloggers.every((b) => selected.includes(b.screenName))
+                      }
+                      onChange={(e) => {
+                        e.stopPropagation();
+                        if (e.target.checked) {
+                          const groupScreenNames = gBloggers.map(
+                            (b) => b.screenName,
+                          );
+                          setSelected([
+                            ...new Set([...selected, ...groupScreenNames]),
+                          ]);
+                        } else {
+                          const groupScreenNames = new Set(
+                            gBloggers.map((b) => b.screenName),
+                          );
+                          setSelected(
+                            selected.filter((s) => !groupScreenNames.has(s)),
+                          );
+                        }
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      全选
+                    </Checkbox>
+                    <Button
+                      type="primary"
+                      size="small"
+                      icon={<CloudDownloadOutlined />}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openIncrementalDialog(gBloggers);
+                      }}
+                    >
+                      增量下载
+                    </Button>
                     <Button
                       type="text"
                       size="small"
@@ -678,12 +709,66 @@ export const BloggerManagement: React.FC = () => {
               <div className="border border-ant-color-border rounded-lg overflow-hidden bg-ant-color-bg-container">
                 {groups.length > 0 && (
                   <div className="px-4 py-2.5 bg-ant-color-fill-quaternary">
-                    <span className="font-semibold text-ant-color-text">
-                      未分组
-                      <span className="ml-2 text-ant-color-text-tertiary font-normal">
-                        ({groupedBloggers.ungrouped.length})
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-ant-color-text">
+                        未分组
+                        <span className="ml-2 text-ant-color-text-tertiary font-normal">
+                          ({groupedBloggers.ungrouped.length})
+                        </span>
                       </span>
-                    </span>
+                      <Space size="small">
+                        <Checkbox
+                          checked={groupedBloggers.ungrouped.every((b) =>
+                            selected.includes(b.screenName),
+                          )}
+                          indeterminate={
+                            groupedBloggers.ungrouped.some((b) =>
+                              selected.includes(b.screenName),
+                            ) &&
+                            !groupedBloggers.ungrouped.every((b) =>
+                              selected.includes(b.screenName),
+                            )
+                          }
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              const ungroupedScreenNames =
+                                groupedBloggers.ungrouped.map(
+                                  (b) => b.screenName,
+                                );
+                              setSelected([
+                                ...new Set([
+                                  ...selected,
+                                  ...ungroupedScreenNames,
+                                ]),
+                              ]);
+                            } else {
+                              const ungroupedScreenNames = new Set(
+                                groupedBloggers.ungrouped.map(
+                                  (b) => b.screenName,
+                                ),
+                              );
+                              setSelected(
+                                selected.filter(
+                                  (s) => !ungroupedScreenNames.has(s),
+                                ),
+                              );
+                            }
+                          }}
+                        >
+                          全选
+                        </Checkbox>
+                        <Button
+                          type="primary"
+                          size="small"
+                          icon={<CloudDownloadOutlined />}
+                          onClick={() =>
+                            openIncrementalDialog(groupedBloggers.ungrouped)
+                          }
+                        >
+                          增量下载
+                        </Button>
+                      </Space>
+                    </div>
                   </div>
                 )}
                 <List
@@ -742,15 +827,6 @@ export const BloggerManagement: React.FC = () => {
               className="w-full"
             />
           )}
-          {batchProgress && (
-            <Progress
-              percent={Math.round(
-                (batchProgress.current / batchProgress.total) * 100,
-              )}
-              status="active"
-              format={() => `${batchProgress.current}/${batchProgress.total}`}
-            />
-          )}
         </div>
       </Modal>
 
@@ -797,13 +873,6 @@ export const BloggerManagement: React.FC = () => {
           >
             获取
           </Button>
-          {importFetching && (
-            <Progress
-              percent={importProgress}
-              status="active"
-              format={(p) => `已获取 ${p} 位`}
-            />
-          )}
           {importUsers && (
             <div className="max-h-96 overflow-y-auto border rounded p-2">
               <List
