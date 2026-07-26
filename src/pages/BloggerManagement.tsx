@@ -370,87 +370,78 @@ export const BloggerManagement: React.FC = () => {
         key={b.screenName}
         className="!px-4 !py-3 !border-0 transition-colors hover:bg-ant-color-fill-secondary cursor-pointer"
         actions={[
-          <Tooltip key="inc" title="增量下载">
-            <Button
-              type="text"
-              size="small"
-              icon={<CloudDownloadOutlined />}
-              loading={isIncLoading}
-              onClick={(e) => {
-                e.stopPropagation();
-                openIncrementalDialog([b]);
-              }}
-            />
-          </Tooltip>,
-          <Tooltip key="folder" title="打开本地文件夹">
-            <Button
-              type="text"
-              size="small"
-              icon={<FolderOpenOutlined />}
-              onClick={(e) => {
-                e.stopPropagation();
-                openLocalFolder(b);
-              }}
-            />
-          </Tooltip>,
-          <Tooltip key="gallery" title="在画廊中查看">
-            <Button
-              type="text"
-              size="small"
-              icon={<AppstoreOutlined />}
-              onClick={(e) => {
-                e.stopPropagation();
-                openInGallery(b);
-              }}
-            />
-          </Tooltip>,
-          <Tooltip key="homepage" title="跳转主页预览">
-            <Button
-              type="text"
-              size="small"
-              icon={<SearchOutlined />}
-              loading={isHomeLoading}
-              onClick={(e) => {
-                e.stopPropagation();
-                gotoHomepage(b.screenName);
-              }}
-            />
-          </Tooltip>,
+          <Button
+            key="inc"
+            type="primary"
+            size="small"
+            icon={<CloudDownloadOutlined />}
+            loading={isIncLoading}
+            onClick={(e) => {
+              e.stopPropagation();
+              openIncrementalDialog([b]);
+            }}
+          >
+            增量
+          </Button>,
           <Dropdown
-            key="move"
+            key="more"
             menu={{
               items: [
-                { key: 'none', label: '取消分组' },
+                {
+                  key: 'folder',
+                  label: '打开文件夹',
+                  icon: <FolderOpenOutlined />,
+                  onClick: () => openLocalFolder(b),
+                },
+                {
+                  key: 'gallery',
+                  label: '画廊查看',
+                  icon: <AppstoreOutlined />,
+                  onClick: () => openInGallery(b),
+                },
                 { type: 'divider' },
-                ...groups.map((g) => ({ key: g.id, label: g.name })),
+                {
+                  key: 'move',
+                  label: '移动分组',
+                  icon: <DragOutlined />,
+                  children: [
+                    { key: 'none', label: '取消分组' },
+                    { type: 'divider' },
+                    ...groups.map((g) => ({
+                      key: `move-${g.id}`,
+                      label: g.name,
+                    })),
+                  ],
+                },
+                { type: 'divider' },
+                {
+                  key: 'delete',
+                  label: '删除',
+                  icon: <DeleteOutlined />,
+                  danger: true,
+                  onClick: () => {
+                    modal.confirm({
+                      title: `从列表移除 ${b.screenName}？`,
+                      content: '不会删除本地文件。',
+                      onOk: () => removeBlogger(b.screenName),
+                    });
+                  },
+                },
               ],
               onClick: ({ key }) =>
-                moveBloggerToGroup(b.screenName, key === 'none' ? null : key),
+                key.startsWith('move-') || key === 'none'
+                  ? moveBloggerToGroup(
+                      b.screenName,
+                      key === 'none' ? null : key.replace('move-', ''),
+                    )
+                  : undefined,
             }}
             trigger={['click']}
           >
-            <Button
-              type="text"
-              size="small"
-              icon={<DragOutlined />}
-              onClick={(e) => e.stopPropagation()}
-            />
+            <Button size="small" onClick={(e) => e.stopPropagation()}>
+              更多
+            </Button>
           </Dropdown>,
-          <Button
-            key="del"
-            type="text"
-            size="small"
-            danger
-            icon={<DeleteOutlined />}
-            onClick={(e) => {
-              e.stopPropagation();
-              modal.confirm({
-                title: `从列表移除 ${b.screenName}？`,
-                content: '不会删除本地文件。',
-                onOk: () => removeBlogger(b.screenName),
-              });
-            }}
-          />,
         ]}
       >
         <div className="flex items-center gap-3 min-w-0 flex-1">
@@ -513,34 +504,30 @@ export const BloggerManagement: React.FC = () => {
           共 {bloggers.length} 位博主
           {postIdCount > 0 && ` · 本地索引 ${postIdCount} 个帖子`}
         </span>
-        <Tooltip title="扫描保存目录并更新博主、本地文件数量和帖子索引">
-          <Button
-            size="small"
-            icon={<ImportOutlined />}
-            loading={importLoading}
-            onClick={onImport}
-          >
-            导入/刷新本地内容
-          </Button>
-        </Tooltip>
-        <Tooltip title="获取 X 列表成员或某账号的关注，批量加入博主列表">
-          <Button
-            size="small"
-            icon={<UsergroupAddOutlined />}
-            onClick={() => setImportUsersOpen(true)}
-          >
-            列表/关注导入
-          </Button>
-        </Tooltip>
-        <Tooltip title="创建分组">
-          <Button
-            size="small"
-            icon={<FolderAddOutlined />}
-            onClick={handleCreateGroup}
-          >
-            新建分组
-          </Button>
-        </Tooltip>
+        <Button
+          size="small"
+          icon={<ImportOutlined />}
+          loading={importLoading}
+          onClick={onImport}
+        >
+          导入/刷新本地内容
+        </Button>
+
+        <Button
+          size="small"
+          icon={<UsergroupAddOutlined />}
+          onClick={() => setImportUsersOpen(true)}
+        >
+          列表/关注导入
+        </Button>
+
+        <Button
+          size="small"
+          icon={<FolderAddOutlined />}
+          onClick={handleCreateGroup}
+        >
+          新建分组
+        </Button>
         <Checkbox
           checked={allFilteredSelected}
           indeterminate={selected.length > 0 && !allFilteredSelected}
