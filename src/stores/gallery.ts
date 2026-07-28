@@ -15,6 +15,12 @@ export interface GalleryMedia {
   modifiedAt?: number;
 }
 
+/** 单个文件夹的扫描结果：本层媒体文件 + 本层子文件夹 */
+export interface GalleryFolderContent {
+  medias: GalleryMedia[];
+  subfolders: GalleryFolder[];
+}
+
 export type GalleryViewMode = 'thumbnail' | 'list';
 export type GallerySortBy = 'name' | 'modifiedAt';
 export type GallerySortOrder = 'asc' | 'desc';
@@ -28,15 +34,19 @@ export interface GalleryStore {
   foldersDir: string;
   setFoldersDir: (dir: string) => void;
 
-  currentFolder: GalleryFolder | null;
-  setCurrentFolder: (f: GalleryFolder | null) => void;
+  /** 当前浏览的文件夹层级栈（空数组 = 顶层文件夹列表），支持多级目录 */
+  folderStack: GalleryFolder[];
+  setFolderStack: (stack: GalleryFolder[]) => void;
   /** 其他页面（如博主管理）请求画廊打开的文件夹路径，进入画廊后消费并清空 */
   pendingOpenPath: string | null;
   setPendingOpenPath: (p: string | null) => void;
   medias: GalleryMedia[];
   setMedias: (m: GalleryMedia[]) => void;
-  mediaCache: Record<string, GalleryMedia[]>;
-  setMediaCache: (path: string, medias: GalleryMedia[]) => void;
+  /** 当前文件夹下的子文件夹列表 */
+  subfolders: GalleryFolder[];
+  setSubfolders: (f: GalleryFolder[]) => void;
+  mediaCache: Record<string, GalleryFolderContent>;
+  setMediaCache: (path: string, content: GalleryFolderContent) => void;
   invalidateMediaCache: (path: string) => void;
   visibleCount: number;
   setVisibleCount: (updater: (c: number) => number) => void;
@@ -70,23 +80,31 @@ export const useGalleryStore = create<GalleryStore>()(
       foldersDir: '',
       setFoldersDir: (dir) => set({ foldersDir: dir }),
 
-      currentFolder: null,
-      setCurrentFolder: (f) => set({ currentFolder: f }),
+      folderStack: [],
+      setFolderStack: (stack) => set({ folderStack: stack }),
       pendingOpenPath: null,
       setPendingOpenPath: (p) => set({ pendingOpenPath: p }),
       medias: [],
       setMedias: (m) => set({ medias: m }),
+      subfolders: [],
+      setSubfolders: (f) => set({ subfolders: f }),
       mediaCache: {},
-      setMediaCache: (folderPath, medias) =>
+      setMediaCache: (folderPath, content) =>
         set((state) => ({
           // 允许缓存空文件夹结果，避免每次打开空目录都重新扫描
-          mediaCache: { ...state.mediaCache, [folderPath]: medias },
+          mediaCache: { ...state.mediaCache, [folderPath]: content },
         })),
       invalidateMediaCache: (folderPath) =>
         set((state) => {
-          if (!(folderPath in state.mediaCache)) return state;
+          // 目录变化/删除时，连同其下所有子目录的缓存一并失效
+          const isUnder = (key: string) =>
+            key === folderPath ||
+            key.startsWith(folderPath + '\\') ||
+            key.startsWith(folderPath + '/');
+          const staleKeys = Object.keys(state.mediaCache).filter(isUnder);
+          if (staleKeys.length === 0) return state;
           const next = { ...state.mediaCache };
-          delete next[folderPath];
+          staleKeys.forEach((key) => delete next[key]);
           return { mediaCache: next };
         }),
       visibleCount: GALLERY_PAGE_SIZE,

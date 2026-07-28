@@ -38,6 +38,9 @@ export interface BloggerStore {
   removeGroup: (id: string) => void;
   renameGroup: (id: string, name: string) => void;
   toggleGroupCollapse: (id: string) => void;
+  /** 「未分组」作为特殊分组，同样支持折叠 */
+  ungroupedCollapsed: boolean;
+  toggleUngroupedCollapse: () => void;
   moveBloggerToGroup: (screenName: string, groupId: string | null) => void;
 }
 
@@ -138,6 +141,10 @@ export const useBloggerStore = create<BloggerStore>()(
             g.id === id ? { ...g, collapsed: !g.collapsed } : g,
           ),
         });
+      },
+      ungroupedCollapsed: false,
+      toggleUngroupedCollapse: () => {
+        set({ ungroupedCollapsed: !get().ungroupedCollapsed });
       },
       moveBloggerToGroup: (screenName, groupId) => {
         set({

@@ -54,6 +54,8 @@ export const BloggerManagement: React.FC = () => {
     removeGroup,
     renameGroup,
     toggleGroupCollapse,
+    ungroupedCollapsed,
+    toggleUngroupedCollapse,
     moveBloggerToGroup,
   } = useBloggerStore();
   const createCreationTask = useDownloadStore((s) => s.createCreationTask);
@@ -704,83 +706,96 @@ export const BloggerManagement: React.FC = () => {
               </div>
             ))}
 
-            {/* 未分组博主 */}
+            {/* 未分组博主（作为特殊分组，同样支持折叠） */}
             {groupedBloggers.ungrouped.length > 0 && (
               <div className="border border-ant-color-border rounded-lg overflow-hidden bg-ant-color-bg-container">
                 {groups.length > 0 && (
-                  <div className="px-4 py-2.5 bg-ant-color-fill-quaternary">
-                    <div className="flex items-center justify-between">
+                  <div
+                    className="flex items-center justify-between px-4 py-2.5 bg-ant-color-fill-quaternary cursor-pointer transition-colors hover:bg-ant-color-fill-tertiary"
+                    onClick={toggleUngroupedCollapse}
+                  >
+                    <Space className="flex-1">
+                      {ungroupedCollapsed ? (
+                        <CaretRightOutlined className="text-ant-color-text-tertiary" />
+                      ) : (
+                        <CaretDownOutlined className="text-ant-color-text-tertiary" />
+                      )}
                       <span className="font-semibold text-ant-color-text">
                         未分组
                         <span className="ml-2 text-ant-color-text-tertiary font-normal">
                           ({groupedBloggers.ungrouped.length})
                         </span>
                       </span>
-                      <Space size="small">
-                        <Checkbox
-                          checked={groupedBloggers.ungrouped.every((b) =>
+                    </Space>
+                    <Space size="small">
+                      <Checkbox
+                        checked={groupedBloggers.ungrouped.every((b) =>
+                          selected.includes(b.screenName),
+                        )}
+                        indeterminate={
+                          groupedBloggers.ungrouped.some((b) =>
                             selected.includes(b.screenName),
-                          )}
-                          indeterminate={
-                            groupedBloggers.ungrouped.some((b) =>
-                              selected.includes(b.screenName),
-                            ) &&
-                            !groupedBloggers.ungrouped.every((b) =>
-                              selected.includes(b.screenName),
-                            )
-                          }
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              const ungroupedScreenNames =
-                                groupedBloggers.ungrouped.map(
-                                  (b) => b.screenName,
-                                );
-                              setSelected([
-                                ...new Set([
-                                  ...selected,
-                                  ...ungroupedScreenNames,
-                                ]),
-                              ]);
-                            } else {
-                              const ungroupedScreenNames = new Set(
-                                groupedBloggers.ungrouped.map(
-                                  (b) => b.screenName,
-                                ),
+                          ) &&
+                          !groupedBloggers.ungrouped.every((b) =>
+                            selected.includes(b.screenName),
+                          )
+                        }
+                        onChange={(e) => {
+                          e.stopPropagation();
+                          if (e.target.checked) {
+                            const ungroupedScreenNames =
+                              groupedBloggers.ungrouped.map(
+                                (b) => b.screenName,
                               );
-                              setSelected(
-                                selected.filter(
-                                  (s) => !ungroupedScreenNames.has(s),
-                                ),
-                              );
-                            }
-                          }}
-                        >
-                          全选
-                        </Checkbox>
-                        <Button
-                          type="primary"
-                          size="small"
-                          icon={<CloudDownloadOutlined />}
-                          onClick={() =>
-                            openIncrementalDialog(groupedBloggers.ungrouped)
+                            setSelected([
+                              ...new Set([
+                                ...selected,
+                                ...ungroupedScreenNames,
+                              ]),
+                            ]);
+                          } else {
+                            const ungroupedScreenNames = new Set(
+                              groupedBloggers.ungrouped.map(
+                                (b) => b.screenName,
+                              ),
+                            );
+                            setSelected(
+                              selected.filter(
+                                (s) => !ungroupedScreenNames.has(s),
+                              ),
+                            );
                           }
-                        >
-                          增量下载
-                        </Button>
-                      </Space>
-                    </div>
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        全选
+                      </Checkbox>
+                      <Button
+                        type="primary"
+                        size="small"
+                        icon={<CloudDownloadOutlined />}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openIncrementalDialog(groupedBloggers.ungrouped);
+                        }}
+                      >
+                        增量下载
+                      </Button>
+                    </Space>
                   </div>
                 )}
-                <List
-                  dataSource={groupedBloggers.ungrouped}
-                  renderItem={renderBloggerItem}
-                  split={true}
-                  className={
-                    groups.length > 0
-                      ? '[&_.ant-list-item]:border-t [&_.ant-list-item]:border-ant-color-border-secondary'
-                      : ''
-                  }
-                />
+                {!(groups.length > 0 && ungroupedCollapsed) && (
+                  <List
+                    dataSource={groupedBloggers.ungrouped}
+                    renderItem={renderBloggerItem}
+                    split={true}
+                    className={
+                      groups.length > 0
+                        ? '[&_.ant-list-item]:border-t [&_.ant-list-item]:border-ant-color-border-secondary'
+                        : ''
+                    }
+                  />
+                )}
               </div>
             )}
           </div>

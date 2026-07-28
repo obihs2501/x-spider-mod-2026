@@ -85,10 +85,12 @@ export const Gallery: React.FC = () => {
     setFolders,
     setFoldersLoaded,
     setFoldersDir,
-    currentFolder,
-    setCurrentFolder,
+    folderStack,
+    setFolderStack,
     medias,
     setMedias,
+    subfolders,
+    setSubfolders,
     mediaCache,
     setMediaCache,
     invalidateMediaCache,
@@ -110,6 +112,7 @@ export const Gallery: React.FC = () => {
     mediaSortOrder,
     setMediaSortOrder,
   } = useGalleryStore();
+  const currentFolder = folderStack[folderStack.length - 1] || null;
   const foldersRef = useRef(folders);
   foldersRef.current = folders;
 
@@ -160,10 +163,16 @@ export const Gallery: React.FC = () => {
           modifiedAt,
         };
       });
-      // 删除已不存在目录的缓存
-      const nextPaths = new Set(result.map((f) => f.path));
+      // 删除已不存在目录的缓存（各级子目录的缓存跟随其一级目录保留）
+      const stillExists = (cachePath: string) =>
+        result.some(
+          (f) =>
+            cachePath === f.path ||
+            cachePath.startsWith(f.path + '\\') ||
+            cachePath.startsWith(f.path + '/'),
+        );
       Object.keys(useGalleryStore.getState().mediaCache).forEach((path) => {
-        if (!nextPaths.has(path)) {
+        if (!stillExists(path)) {
           invalidateMediaCache(path);
         }
       });
@@ -185,46 +194,68 @@ export const Gallery: React.FC = () => {
     invalidateMediaCache,
   ]);
 
-  // 进入某个子文件夹：只有目录有变化或明确刷新时才重新扫描
+  // 进入某个文件夹（stack 为包含目标在内的完整层级栈）：
+  // 只扫描当前层级，子文件夹以文件夹形式展示，点击进入下一级
   const openFolder = useCallback(
-    async (folder: GalleryFolder, force = false) => {
+    async (folder: GalleryFolder, stack: GalleryFolder[], force = false) => {
       const token = ++openFolderTokenRef.current;
-      setCurrentFolder(folder);
+      setFolderStack(stack);
       resetVisibleCount();
       const cached = mediaCache[folder.path];
       // 命中缓存（含空目录缓存）时直接复用
       if (!force && cached) {
-        setMedias(cached);
+        setMedias(cached.medias);
+        setSubfolders(cached.subfolders);
         return;
       }
 
       setLoading(true);
       setMedias([]);
+      setSubfolders([]);
       try {
-        const entries = await fs.readDir(folder.path, { recursive: true });
+        // 非递归读取：目录的 children 为空数组，文件为 undefined
+        const entries = await fs.readDir(folder.path);
         if (token !== openFolderTokenRef.current) return;
         const list: {
           path: string;
           name: string;
           isVideo: boolean;
         }[] = [];
-        const walk = (items: fs.FileEntry[]) => {
-          for (const e of items) {
-            if (e.children) {
-              walk(e.children);
-              continue;
-            }
-            const kind = classifyFile(e.name || '');
-            if (kind) {
-              list.push({
-                path: e.path,
-                name: e.name || '',
-                isVideo: kind === 'video',
-              });
-            }
+        const directoryEntries: { path: string; name: string }[] = [];
+        for (const e of entries) {
+          if (Array.isArray(e.children)) {
+            directoryEntries.push({ path: e.path, name: e.name || '' });
+            continue;
           }
-        };
-        walk(entries);
+          const kind = classifyFile(e.name || '');
+          if (kind) {
+            list.push({
+              path: e.path,
+              name: e.name || '',
+              isVideo: kind === 'video',
+            });
+          }
+        }
+        // 子文件夹数量少，直接取 metadata 供排序展示
+        let nextSubfolders: GalleryFolder[] = directoryEntries.map((d) => ({
+          ...d,
+          modifiedAt: undefined,
+        }));
+        if (directoryEntries.length > 0) {
+          const dirMetadata = await invoke<
+            { path: string; modifiedAt?: number }[]
+          >('filesystem_metadata', {
+            paths: directoryEntries.map((d) => d.path),
+          });
+          if (token !== openFolderTokenRef.current) return;
+          const dirModifiedMap = new Map(
+            dirMetadata.map((item) => [item.path, item.modifiedAt]),
+          );
+          nextSubfolders = directoryEntries.map((d) => ({
+            ...d,
+            modifiedAt: dirModifiedMap.get(d.path),
+          }));
+        }
         // 仅在需要修改时间排序时才批量取 metadata，减少大文件夹阻塞
         let enriched = list.map((item) => ({
           ...item,
@@ -253,7 +284,11 @@ export const Gallery: React.FC = () => {
         }
         if (token !== openFolderTokenRef.current) return;
         setMedias(enriched);
-        setMediaCache(folder.path, enriched);
+        setSubfolders(nextSubfolders);
+        setMediaCache(folder.path, {
+          medias: enriched,
+          subfolders: nextSubfolders,
+        });
       } catch (err: any) {
         if (token !== openFolderTokenRef.current) return;
         log.error(err);
@@ -269,11 +304,25 @@ export const Gallery: React.FC = () => {
       mediaSortBy,
       message,
       resetVisibleCount,
-      setCurrentFolder,
+      setFolderStack,
       setMediaCache,
       setMedias,
+      setSubfolders,
     ],
   );
+
+  // 返回上一级：上级内容命中缓存时瞬时恢复
+  const goBack = useCallback(() => {
+    const parentStack = folderStack.slice(0, -1);
+    const parent = parentStack[parentStack.length - 1];
+    if (parent) {
+      openFolder(parent, parentStack);
+    } else {
+      setFolderStack([]);
+      setMedias([]);
+      setSubfolders([]);
+    }
+  }, [folderStack, openFolder, setFolderStack, setMedias, setSubfolders]);
 
   // 默认不自动刷新：仅在从未扫描过、或保存路径发生变化时自动扫描一次。
   // 等持久化状态恢复完成后再判断，避免启动瞬间误判为「未扫描过」而重扫。
@@ -301,7 +350,7 @@ export const Gallery: React.FC = () => {
           .getState()
           .folders.find((f) => f.path === state.pendingOpenPath);
         if (target) {
-          openFolder(target);
+          openFolder(target, [target]);
         }
         useGalleryStore.getState().setPendingOpenPath(null);
       }
@@ -335,6 +384,15 @@ export const Gallery: React.FC = () => {
       }),
     [compareItems, folderSortBy, folderSortOrder, folders],
   );
+  // 文件夹内的子文件夹沿用顶层的文件夹排序设置
+  const sortedSubfolders = useMemo(
+    () =>
+      [...subfolders].sort((a, b) => {
+        const result = compareItems(a, b, folderSortBy);
+        return folderSortOrder === 'asc' ? result : -result;
+      }),
+    [compareItems, folderSortBy, folderSortOrder, subfolders],
+  );
   const sortedMedias = useMemo(
     () =>
       [...medias].sort((a, b) => {
@@ -351,27 +409,38 @@ export const Gallery: React.FC = () => {
       <div className="flex items-center gap-3 mb-3 flex-wrap">
         {currentFolder ? (
           <>
-            <Button
-              icon={<ArrowLeftOutlined />}
-              size="small"
-              onClick={() => {
-                setCurrentFolder(null);
-                setMedias([]);
-              }}
-            >
+            <Button icon={<ArrowLeftOutlined />} size="small" onClick={goBack}>
               返回
             </Button>
-            <h2 className="font-bold text-lg truncate max-w-[30%]">
-              {currentFolder.name}
+            <h2 className="font-bold text-lg max-w-[36%] flex items-center gap-1 min-w-0">
+              {folderStack.map((f, i) =>
+                i === folderStack.length - 1 ? (
+                  <span key={f.path} className="truncate" title={f.name}>
+                    {f.name}
+                  </span>
+                ) : (
+                  <React.Fragment key={f.path}>
+                    <button
+                      className="truncate max-w-[160px] text-ant-color-text-tertiary hover:text-ant-color-primary transition-colors"
+                      title={f.name}
+                      onClick={() => openFolder(f, folderStack.slice(0, i + 1))}
+                    >
+                      {f.name}
+                    </button>
+                    <span className="text-gray-400 shrink-0">/</span>
+                  </React.Fragment>
+                ),
+              )}
             </h2>
             <span className="text-gray-400 text-sm">
-              共 {medias.length} 个文件
+              {subfolders.length > 0 && `${subfolders.length} 个子文件夹 · `}共{' '}
+              {medias.length} 个文件
             </span>
             <Button
               icon={<ReloadOutlined />}
               size="small"
               loading={loading}
-              onClick={() => openFolder(currentFolder, true)}
+              onClick={() => openFolder(currentFolder, folderStack, true)}
             >
               重新扫描
             </Button>
@@ -519,7 +588,7 @@ export const Gallery: React.FC = () => {
                 <button
                   key={f.path}
                   className="w-full flex items-center gap-3 p-3 bg-white border-[1px] rounded-lg text-left hover:border-ant-color-primary"
-                  onClick={() => openFolder(f)}
+                  onClick={() => openFolder(f, [f])}
                 >
                   <FolderFilled className="text-xl text-ant-color-primary" />
                   <span className="grow truncate">{f.name}</span>
@@ -539,7 +608,7 @@ export const Gallery: React.FC = () => {
                 <button
                   key={f.path}
                   className="flex items-center gap-3 p-4 bg-white border-[1px] rounded-xl text-left hover:shadow-md transition-shadow"
-                  onClick={() => openFolder(f)}
+                  onClick={() => openFolder(f, [f])}
                   title={f.name}
                 >
                   <FolderFilled className="text-2xl text-ant-color-primary shrink-0" />
@@ -551,14 +620,50 @@ export const Gallery: React.FC = () => {
         </div>
       )}
 
-      {/* 文件夹内媒体视图（分页渲染） */}
+      {/* 文件夹内视图：先展示子文件夹，再展示本层媒体（分页渲染） */}
       {!loading && currentFolder && (
         <div className="grow overflow-auto pb-6">
-          {medias.length === 0 ? (
+          {medias.length === 0 && subfolders.length === 0 ? (
             <Empty description="该文件夹内没有媒体文件" className="mt-20" />
           ) : (
             <>
-              {viewMode === 'list' ? (
+              {sortedSubfolders.length > 0 &&
+                (viewMode === 'list' ? (
+                  <div className="space-y-2 mb-3">
+                    {sortedSubfolders.map((f) => (
+                      <button
+                        key={f.path}
+                        className="w-full flex items-center gap-3 p-3 bg-white border-[1px] rounded-lg text-left hover:border-ant-color-primary"
+                        onClick={() => openFolder(f, [...folderStack, f])}
+                      >
+                        <FolderFilled className="text-xl text-ant-color-primary" />
+                        <span className="grow truncate">{f.name}</span>
+                        <span className="text-xs text-gray-400">
+                          {f.modifiedAt
+                            ? new Date(f.modifiedAt).toLocaleString()
+                            : '修改时间未知'}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div
+                    className={`grid ${COLUMN_CLASS[columns] || 'grid-cols-5'} gap-3 mb-3`}
+                  >
+                    {sortedSubfolders.map((f) => (
+                      <button
+                        key={f.path}
+                        className="flex items-center gap-3 p-4 bg-white border-[1px] rounded-xl text-left hover:shadow-md transition-shadow"
+                        onClick={() => openFolder(f, [...folderStack, f])}
+                        title={f.name}
+                      >
+                        <FolderFilled className="text-2xl text-ant-color-primary shrink-0" />
+                        <span className="truncate">{f.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                ))}
+              {medias.length === 0 ? null : viewMode === 'list' ? (
                 <div className="space-y-2">
                   {visibleMedias.map((m) => {
                     const src = tauri.convertFileSrc(m.path);
