@@ -79,5 +79,5 @@ jobs:
           TAG="v${VERSION}-build.${GITHUB_RUN_NUMBER}"
           gh release create "$TAG" ./src-tauri/target/release/bundle/nsis/* \
             --title "$TAG" \
-            --notes "v1.7.6 更新：1) 画廊支持多级子目录——进入博主文件夹后，子目录以文件夹卡片单独展示，可逐级进入、面包屑跳转返回，不再与本层文件混在一起；2) 博主管理「未分组」作为特殊分组支持折叠/展开（状态持久化），交互与普通分组一致。" \
+            --notes "v1.7.7 修复：窗口失焦/最小化后下载停滞的问题。原因是 WebView2 对后台窗口做定时器节流（链式定时器限到 1s，超 5 分钟进入每分钟 1 次的密集节流），导致前端驱动的任务调度、翻页解析、队列推进近乎停摆。现通过 additionalBrowserArgs 关闭后台节流（disable-background-timer-throttling / IntensiveWakeUpThrottling / CalculateNativeWinOcclusion 等），后台挂机下载不再掉速。" \
             --latest

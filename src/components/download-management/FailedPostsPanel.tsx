@@ -84,7 +84,7 @@ export const FailedPostsPanel: React.FC = () => {
 
   return (
     <>
-      <div className="flex items-center justify-between bg-white border-[1px] border-red-200 rounded-md px-4 py-2 mb-3">
+      <div className="flex items-center justify-between bg-white border-[1px] border-red-200 rounded-md px-4 py-2 mb-3 flex-shrink-0">
         <span className="text-sm text-red-500 flex items-center gap-2">
           <WarningOutlined />
           {`${failures.length} 条推文处理失败，可重试`}
