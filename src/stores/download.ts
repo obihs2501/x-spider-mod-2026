@@ -640,7 +640,7 @@ async function runCreationTask(task: CreationTask, abortSignal: AbortSignal) {
 
     const filteredPosts = pagePosts.filter(
       R.allPass([
-        (post) => (post.medias ? post.medias.length >= 0 : false),
+        (post) => Boolean(post.medias && post.medias.length > 0),
         (post) => {
           if (!post.createdAt) return true;
           return until ? post.createdAt.isBefore(until) : true;

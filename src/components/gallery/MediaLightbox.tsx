@@ -11,6 +11,7 @@ import {
 } from '@ant-design/icons';
 import { tauri } from '@tauri-apps/api';
 import { Tooltip } from 'antd';
+import clsx from 'clsx';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { GalleryMedia } from '../../stores/gallery';
@@ -18,6 +19,9 @@ import { formatBytes, formatDateTime } from '../../utils/gallery-media';
 
 const MIN_SCALE = 0.2;
 const MAX_SCALE = 8;
+
+/** 视频音量 / 静音在预览会话内记忆，切换视频时沿用 */
+const videoAudioState = { volume: 1, muted: false };
 
 function clampScale(v: number) {
   return Math.min(MAX_SCALE, Math.max(MIN_SCALE, v));
@@ -39,6 +43,7 @@ const ZoomableImage: React.FC<{
     originY: number;
     moved: boolean;
   } | null>(null);
+  const [dragging, setDragging] = useState(false);
 
   useEffect(() => {
     setOffset({ x: 0, y: 0 });
@@ -64,7 +69,9 @@ const ZoomableImage: React.FC<{
     <div
       ref={containerRef}
       className="w-full h-full flex items-center justify-center overflow-hidden"
-      style={{ cursor: scale > 1 ? 'grab' : 'zoom-in' }}
+      style={{
+        cursor: scale > 1 ? (dragging ? 'grabbing' : 'grab') : 'default',
+      }}
       onMouseDown={(e) => {
         if (e.button !== 0) return;
         dragRef.current = {
@@ -80,21 +87,24 @@ const ZoomableImage: React.FC<{
         if (!drag || scale <= 1) return;
         const dx = e.clientX - drag.startX;
         const dy = e.clientY - drag.startY;
-        if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
+        if (Math.abs(dx) + Math.abs(dy) > 3) {
+          drag.moved = true;
+          if (!dragging) setDragging(true);
+        }
         setOffset({ x: drag.originX + dx, y: drag.originY + dy });
       }}
       onMouseUp={() => {
         dragRef.current = null;
+        setDragging(false);
       }}
       onMouseLeave={() => {
         dragRef.current = null;
+        setDragging(false);
       }}
       onClick={(e) => {
-        // 点击空白处关闭由外层处理；点击图片本身放大/复位
-        if (dragRef.current?.moved) return;
-        if ((e.target as HTMLElement).tagName !== 'IMG') return;
-        e.stopPropagation();
-        onScaleChange((s) => (s > 1 ? 1 : 2));
+        // 图片区域：点击不再放大（避免与拖拽冲突），缩放交给滚轮 / 工具栏；
+        // 点击图片本身不冒泡关闭，点击空白处由外层关闭
+        if ((e.target as HTMLElement).tagName === 'IMG') e.stopPropagation();
       }}
       onDoubleClick={(e) => e.stopPropagation()}
     >
@@ -102,7 +112,11 @@ const ZoomableImage: React.FC<{
         src={src}
         alt={alt}
         draggable={false}
-        className="max-w-full max-h-full object-contain select-none transition-transform duration-100"
+        className={clsx(
+          'max-w-full max-h-full object-contain select-none will-change-transform',
+          // 拖拽期间关闭过渡动画，否则每帧都在补间，拖动会卡顿
+          !dragging && 'transition-transform duration-100',
+        )}
         style={{
           transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
         }}
@@ -128,7 +142,7 @@ const ToolbarButton: React.FC<{
 }> = ({ title, icon, onClick, disabled }) => (
   <Tooltip title={title}>
     <button
-      className="w-9 h-9 rounded-lg text-white/90 hover:bg-white/15 disabled:opacity-30 disabled:hover:bg-transparent flex items-center justify-center transition-colors text-base"
+      className="w-9 h-9 rounded-lg text-[#B8B5AA] hover:text-white hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-transparent flex items-center justify-center transition-colors text-base"
       onClick={(e) => {
         e.stopPropagation();
         onClick();
@@ -247,7 +261,7 @@ export const MediaLightbox: React.FC<MediaLightboxProps> = ({
               icon={<ZoomOutOutlined />}
               onClick={() => setScale((s) => clampScale(s / 1.25))}
             />
-            <span className="text-xs text-white/70 w-12 text-center tabular-nums">
+            <span className="text-xs text-white/50 w-12 text-center tabular-nums">
               {Math.round(scale * 100)}%
             </span>
             <ToolbarButton
@@ -291,6 +305,15 @@ export const MediaLightbox: React.FC<MediaLightboxProps> = ({
               controls
               autoPlay
               className="max-w-full max-h-full bg-black outline-none"
+              onLoadedMetadata={(e) => {
+                // 沿用上一次的音量 / 静音设置
+                e.currentTarget.volume = videoAudioState.volume;
+                e.currentTarget.muted = videoAudioState.muted;
+              }}
+              onVolumeChange={(e) => {
+                videoAudioState.volume = e.currentTarget.volume;
+                videoAudioState.muted = e.currentTarget.muted;
+              }}
             />
           </div>
         ) : (

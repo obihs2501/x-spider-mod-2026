@@ -23,8 +23,52 @@ import {
   noteRateLimitHeaders,
 } from './rate-limit';
 import { RequestOptions } from '../interfaces/RequestOptions';
+import { getCandidateQueryIds, GraphQLOperation } from './query-ids';
 
 const HOST = 'x.com';
+
+/** 是否为 queryId 失效的典型响应（400 / 404） */
+function isStaleQueryIdError(err: unknown, status?: number): boolean {
+  if (status === 400 || status === 404) return true;
+  const text = String((err as any)?.message || err || '');
+  return text.includes('HTTP 400') || text.includes('HTTP 404');
+}
+
+/**
+ * 发起 GraphQL 请求：按 query-ids 配置依次尝试候选 queryId。
+ * 400/404 通常意味着该 queryId 已失效——非最后一个候选直接换下一个；
+ * 全部候选耗尽后抛出最后一次错误。
+ */
+async function graphqlRequest(
+  operation: GraphQLOperation,
+  options: Omit<RequestOptions, 'url'>,
+): Promise<Response> {
+  const candidates = await getCandidateQueryIds(operation);
+  let lastErr: unknown;
+  for (let i = 0; i < candidates.length; i++) {
+    const isLast = i === candidates.length - 1;
+    const url = `https://${HOST}/i/api/graphql/${candidates[i]}/${operation}`;
+    try {
+      const resp = await xRequest({ ...options, url });
+      if (!isLast && isStaleQueryIdError(null, resp.status)) {
+        log.warn(
+          `GraphQL ${operation} queryId=${candidates[i]} 返回 ${resp.status}，尝试备用 queryId`,
+        );
+        lastErr = new Error(`Response error: status=${resp.status}`);
+        continue;
+      }
+      return resp;
+    } catch (err) {
+      lastErr = err;
+      if (isLast || !isStaleQueryIdError(err)) throw err;
+      log.warn(
+        `GraphQL ${operation} queryId=${candidates[i]} 请求失败，尝试备用 queryId`,
+        err,
+      );
+    }
+  }
+  throw lastErr;
+}
 
 /**
  * 构建带鉴权的通用请求头。
@@ -148,10 +192,9 @@ export async function getAccountInfo(
 }
 
 export async function getUser(screenName: string): Promise<TwitterUser> {
-  const resp = await xRequest({
+  const resp = await graphqlRequest('UserByScreenName', {
     method: 'GET',
     responseType: 'json',
-    url: `https://${HOST}/i/api/graphql/sLVLhk0bGj3MVFEKTdax1w/UserByScreenName`,
     query: {
       features: JSON.stringify({
         hidden_profile_likes_enabled: true,
@@ -274,9 +317,13 @@ const mapTwitterPosts = (posts: any[]) => {
       replyCount: item?.legacy?.reply_count,
       retweeted: item?.legacy?.retweeted,
       retweetCount: item?.legacy?.retweet_count,
-      medias: item?.legacy?.entities?.media
-        ? mapTwitterMedias(item.legacy?.entities?.media)
-        : undefined,
+      // 多图帖子 entities.media 只含第一张，完整媒体列表在 extended_entities
+      medias: (() => {
+        const mediaSource =
+          item?.legacy?.extended_entities?.media ||
+          item?.legacy?.entities?.media;
+        return mediaSource ? mapTwitterMedias(mediaSource) : undefined;
+      })(),
       tags: R.pipe<any, any[], string[]>(
         R.path<any>(['legacy', 'entities', 'hashtags']),
         R.ifElse(R.isNotNil, R.map(R.prop('text')), R.always([])),
@@ -311,9 +358,8 @@ export async function getUserMedias(
   twitterPosts: TwitterPost[];
   cursor: string | null;
 }> {
-  const resp = await xRequest({
+  const resp = await graphqlRequest('UserMedia', {
     method: 'GET',
-    url: `https://${HOST}/i/api/graphql/YqiE3JL1KNgf9nSljYdxaA/UserMedia`,
     responseType: 'json',
     query: {
       features: JSON.stringify({
@@ -452,9 +498,8 @@ export async function getUserTweets(
   twitterPosts: TwitterPost[];
   cursor: string | null;
 }> {
-  const resp = await xRequest({
+  const resp = await graphqlRequest('UserTweets', {
     method: 'GET',
-    url: `https://${HOST}/i/api/graphql/HuTx74BxAnezK1gWvYY7zg/UserTweets`,
     responseType: 'json',
     query: {
       features: JSON.stringify({
@@ -601,9 +646,8 @@ export async function getUserTweets(
  * 返回包含媒体信息的 TwitterPost。
  */
 export async function getTweetDetail(tweetId: string): Promise<TwitterPost> {
-  const resp = await xRequest({
+  const resp = await graphqlRequest('TweetResultByRestId', {
     method: 'GET',
-    url: `https://${HOST}/i/api/graphql/D_jNhjWZeRZT5NURzfJZSQ/TweetResultByRestId`,
     responseType: 'json',
     query: {
       variables: JSON.stringify({
@@ -751,7 +795,7 @@ function extractTimelineUsers(instructions: any[]): {
 
 /** 分页拉取用户时间线（列表成员/关注共用），带页间延迟与游标环路保护 */
 async function fetchTimelineUsers(
-  url: string,
+  operation: GraphQLOperation,
   buildVariables: (cursor: string | undefined) => Record<string, any>,
   instructionsPath: string[],
   onProgress?: (count: number) => void,
@@ -762,10 +806,9 @@ async function fetchTimelineUsers(
   let cursor: string | undefined;
   // 上限保护：最多 50 页 / 5000 个用户
   for (let page = 0; page < 50 && users.length < 5000; page++) {
-    const resp = await xRequest({
+    const resp = await graphqlRequest(operation, {
       method: 'GET',
       responseType: 'json',
-      url,
       query: {
         variables: JSON.stringify(buildVariables(cursor)),
         features: USER_TIMELINE_FEATURES,
@@ -810,7 +853,7 @@ export async function getListMembers(
   onProgress?: (count: number) => void,
 ): Promise<TwitterUser[]> {
   return fetchTimelineUsers(
-    `https://${HOST}/i/api/graphql/3dQPyRyAj6Lslp4e0ClXzg/ListMembers`,
+    'ListMembers',
     (cursor) => ({
       listId,
       count: 100,
@@ -828,7 +871,7 @@ export async function getFollowing(
   onProgress?: (count: number) => void,
 ): Promise<TwitterUser[]> {
   return fetchTimelineUsers(
-    `https://${HOST}/i/api/graphql/7FEKOPNAvxWASt6v9gfCXw/Following`,
+    'Following',
     (cursor) => ({
       userId,
       count: 100,
@@ -842,11 +885,8 @@ export async function getFollowing(
 
 // ---------------------------------------------------------------------------
 // 高级搜索 / 我的喜欢 / 我的书签（借鉴「蓝鸟猎手」的下载源）
-// GraphQL queryId 会随 X 前端更新而变化，失效时只需更新下面的常量。
+// GraphQL queryId 见 query-ids.ts，失效时可用应用数据目录下的 query-ids.json 覆盖。
 // ---------------------------------------------------------------------------
-const SEARCH_TIMELINE_QUERY_ID = 'nK1dw4oV3k4w5TdtcAdSww';
-const LIKES_QUERY_ID = 'aeJWz--kknVBOl7wQ7gh7Q';
-const BOOKMARKS_QUERY_ID = 'qToeLeMs43Q8cr7tRYXmJw';
 
 /** 推文时间线接口共用的 features：在用户时间线的基础上补齐新接口要求的开关 */
 const TWEET_TIMELINE_FEATURES = JSON.stringify({
@@ -929,14 +969,13 @@ function extractTimelinePosts(instructions: any[]): {
 }
 
 async function fetchTweetTimeline(
-  url: string,
+  operation: GraphQLOperation,
   variables: Record<string, any>,
   instructionsPath: string[],
 ): Promise<{ twitterPosts: TwitterPost[]; cursor: string | null }> {
-  const resp = await xRequest({
+  const resp = await graphqlRequest(operation, {
     method: 'GET',
     responseType: 'json',
-    url,
     query: {
       variables: JSON.stringify(variables),
       features: TWEET_TIMELINE_FEATURES,
@@ -971,7 +1010,7 @@ export async function searchTimeline(
   count = 20,
 ): Promise<{ twitterPosts: TwitterPost[]; cursor: string | null }> {
   return fetchTweetTimeline(
-    `https://${HOST}/i/api/graphql/${SEARCH_TIMELINE_QUERY_ID}/SearchTimeline`,
+    'SearchTimeline',
     {
       rawQuery,
       count,
@@ -990,7 +1029,7 @@ export async function getLikes(
   count = 20,
 ): Promise<{ twitterPosts: TwitterPost[]; cursor: string | null }> {
   return fetchTweetTimeline(
-    `https://${HOST}/i/api/graphql/${LIKES_QUERY_ID}/Likes`,
+    'Likes',
     {
       userId,
       count,
@@ -1011,7 +1050,7 @@ export async function getBookmarks(
   count = 20,
 ): Promise<{ twitterPosts: TwitterPost[]; cursor: string | null }> {
   return fetchTweetTimeline(
-    `https://${HOST}/i/api/graphql/${BOOKMARKS_QUERY_ID}/Bookmarks`,
+    'Bookmarks',
     {
       count,
       ...(cursor ? { cursor } : {}),

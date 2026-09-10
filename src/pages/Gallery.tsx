@@ -547,6 +547,27 @@ export const Gallery: React.FC = () => {
                     className="w-44"
                   />
                   <span className="ml-auto flex items-center gap-1.5">
+                    {subfolders.length > 0 && (
+                      <Tooltip
+                        title={
+                          subfoldersCollapsed
+                            ? `展开子文件夹（${subfolders.length}）`
+                            : `收起子文件夹（${subfolders.length}）`
+                        }
+                      >
+                        <Button
+                          size="small"
+                          type={subfoldersCollapsed ? 'default' : 'primary'}
+                          ghost={!subfoldersCollapsed}
+                          icon={<FolderFilled />}
+                          onClick={() =>
+                            setSubfoldersCollapsed(!subfoldersCollapsed)
+                          }
+                        >
+                          {subfoldersCollapsed ? '展开文件夹' : '收起文件夹'}
+                        </Button>
+                      </Tooltip>
+                    )}
                     <Select
                       size="small"
                       value={mediaSortBy}
