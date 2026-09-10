@@ -142,7 +142,7 @@ const ToolbarButton: React.FC<{
 }> = ({ title, icon, onClick, disabled }) => (
   <Tooltip title={title}>
     <button
-      className="w-9 h-9 rounded-lg text-[#B8B5AA] hover:text-white hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-transparent flex items-center justify-center transition-colors text-base"
+      className="w-9 h-9 rounded-lg !bg-transparent border-0 !text-[#C9C6BA] hover:!text-white hover:!bg-white/10 disabled:opacity-30 disabled:hover:!bg-transparent flex items-center justify-center transition-colors text-base cursor-pointer"
       onClick={(e) => {
         e.stopPropagation();
         onClick();
@@ -326,7 +326,7 @@ export const MediaLightbox: React.FC<MediaLightboxProps> = ({
           />
         )}
         <button
-          className="absolute left-3 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/10 hover:bg-white/25 disabled:opacity-0 text-white flex items-center justify-center transition-colors text-lg"
+          className="absolute left-3 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full border-0 !bg-white/10 hover:!bg-white/25 disabled:opacity-0 !text-white flex items-center justify-center transition-colors text-lg cursor-pointer"
           disabled={!hasPrev}
           title="上一个（←）"
           onClick={(e) => {
@@ -337,7 +337,7 @@ export const MediaLightbox: React.FC<MediaLightboxProps> = ({
           <LeftOutlined />
         </button>
         <button
-          className="absolute right-3 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/10 hover:bg-white/25 disabled:opacity-0 text-white flex items-center justify-center transition-colors text-lg"
+          className="absolute right-3 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full border-0 !bg-white/10 hover:!bg-white/25 disabled:opacity-0 !text-white flex items-center justify-center transition-colors text-lg cursor-pointer"
           disabled={!hasNext}
           title="下一个（→）"
           onClick={(e) => {

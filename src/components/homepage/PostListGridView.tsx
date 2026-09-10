@@ -14,16 +14,27 @@ import { GridViewItemAction, GridViewItemActions } from './GridViewItemActions';
 import { VideoPreviewModal } from '../media/VideoPreviewModal';
 import { getDownloadUrl } from '../../twitter/utils';
 
-export const PostListGridView: React.FC = () => {
+export interface PostListGridViewProps {
+  /** 渲染在网格上方、随页面一起滚动的内容（搜索框、下载配置等） */
+  header?: React.ReactNode;
+  /** 是否已有可加载的列表来源；为 false 时只渲染 header，不发起加载 */
+  active: boolean;
+}
+
+export const PostListGridView: React.FC<PostListGridViewProps> = ({
+  header,
+  active,
+}) => {
   const { message } = App.useApp();
   const [imagePreview, setImagePreview] = useState<string>();
   const [videoPreview, setVideoPreview] = useState<{
     src: string;
     title: string;
   } | null>(null);
-  const { userInfo, postList } = useHomepageStore((state) => ({
+  const { userInfo, postList, mode } = useHomepageStore((state) => ({
     postList: state.postList,
     userInfo: state.userInfo,
+    mode: state.mode,
   }));
   const createDownloadTask = useDownloadStore(
     (state) => state.createDownloadTask,
@@ -43,7 +54,10 @@ export const PostListGridView: React.FC = () => {
     [postList.list],
   );
 
+  // 依赖 active / 模式 / 博主：变化时 InfiniteScroll 会重置分页并重新检查
+  const userId = userInfo.data?.id;
   const requestFn = useCallback(async () => {
+    if (!active) return { hasMore: false };
     let state = useHomepageStore.getState();
 
     try {
@@ -60,15 +74,16 @@ export const PostListGridView: React.FC = () => {
     return {
       hasMore: !!state.postList.cursor,
     };
-  }, []);
+  }, [active, mode, userId]);
 
   return (
     <InfiniteScroll
       requestFn={requestFn}
-      className="overflow-y-auto pb-10 overflow-hidden h-[inherit]"
+      className="grow min-h-0 overflow-y-auto pb-10"
     >
-      {postList.loading && !postList.list ? (
-        <div role="status">
+      {header}
+      {!active ? null : postList.loading && !postList.list ? (
+        <div role="status" className="mt-4">
           <LoadingOutlined
             className="text-ant-color-primary mr-2"
             aria-hidden
@@ -80,7 +95,10 @@ export const PostListGridView: React.FC = () => {
           列表加载完成
         </div>
       )}
-      <ul className="grid grid-cols-[repeat(auto-fill,minmax(12rem,1fr))] gap-2">
+      <ul
+        className="grid grid-cols-[repeat(auto-fill,minmax(12rem,1fr))] gap-2 mt-4"
+        hidden={!active}
+      >
         {mediaList.map((media) => {
           // 搜索 / 喜欢 / 书签模式下作者各不相同，优先取推文自带的作者
           const postScreenName = media.screenName || userInfo.data?.screenName;

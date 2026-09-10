@@ -50,7 +50,9 @@ export const InfiniteScroll: React.FC<InfiniteScrollProps> = ({
     }
   }, [requestFn]);
 
+  // requestFn 变化（例如切换了博主 / 模式）时重置分页状态并重新检查是否需要加载
   useEffect(() => {
+    paramRef.current = { hasMore: true };
     onScroll();
   }, [onScroll]);
 

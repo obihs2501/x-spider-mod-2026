@@ -888,25 +888,43 @@ export async function getFollowing(
 // GraphQL queryId 见 query-ids.ts，失效时可用应用数据目录下的 query-ids.json 覆盖。
 // ---------------------------------------------------------------------------
 
-/** 推文时间线接口共用的 features：在用户时间线的基础上补齐新接口要求的开关 */
+/** 推文时间线接口共用的 features（与 gallery-dl 2026-09 保持一致） */
 const TWEET_TIMELINE_FEATURES = JSON.stringify({
-  ...JSON.parse(USER_TIMELINE_FEATURES),
-  profile_label_improvements_pcf_label_in_post_enabled: false,
   rweb_video_screen_enabled: false,
-  premium_content_api_read_enabled: false,
-  responsive_web_grok_analyze_button_fetch_trends_enabled: false,
-  responsive_web_grok_analyze_post_followups_enabled: false,
-  responsive_web_jetfuel_frame: false,
-  responsive_web_grok_share_attachment_enabled: false,
-  responsive_web_grok_show_grok_translated_post: false,
-  responsive_web_grok_analysis_button_from_backend: false,
-  responsive_web_grok_image_annotation_enabled: false,
-  responsive_web_grok_community_note_auto_translation_is_enabled: false,
-  responsive_web_grok_imagine_annotation_enabled: false,
   payments_enabled: false,
+  rweb_xchat_enabled: false,
+  profile_label_improvements_pcf_label_in_post_enabled: true,
+  rweb_tipjar_consumption_enabled: true,
+  verified_phone_label_enabled: false,
+  creator_subscriptions_tweet_preview_api_enabled: true,
+  responsive_web_graphql_timeline_navigation_enabled: true,
+  responsive_web_graphql_skip_user_profile_image_extensions_enabled: false,
+  premium_content_api_read_enabled: false,
+  communities_web_enable_tweet_community_results_fetch: true,
+  c9s_tweet_anatomy_moderator_badge_enabled: true,
+  responsive_web_grok_analyze_button_fetch_trends_enabled: false,
+  responsive_web_grok_analyze_post_followups_enabled: true,
+  responsive_web_jetfuel_frame: true,
+  responsive_web_grok_share_attachment_enabled: true,
+  articles_preview_enabled: true,
+  responsive_web_edit_tweet_api_enabled: true,
   graphql_is_translatable_rweb_tweet_is_translatable_enabled: true,
-  tweet_with_visibility_results_prefer_gql_media_interstitial_enabled: false,
-  responsive_web_media_download_video_enabled: false,
+  view_counts_everywhere_api_enabled: true,
+  longform_notetweets_consumption_enabled: true,
+  responsive_web_twitter_article_tweet_consumption_enabled: true,
+  tweet_awards_web_tipping_enabled: false,
+  responsive_web_grok_show_grok_translated_post: false,
+  responsive_web_grok_analysis_button_from_backend: true,
+  creator_subscriptions_quote_tweet_preview_enabled: false,
+  freedom_of_speech_not_reach_fetch_enabled: true,
+  standardized_nudges_misinfo: true,
+  tweet_with_visibility_results_prefer_gql_limited_actions_policy_enabled: true,
+  longform_notetweets_rich_text_read_enabled: true,
+  longform_notetweets_inline_media_enabled: true,
+  responsive_web_grok_image_annotation_enabled: true,
+  responsive_web_grok_imagine_annotation_enabled: true,
+  responsive_web_grok_community_note_auto_translation_is_enabled: false,
+  responsive_web_enhance_cards_enabled: false,
 });
 
 /**
@@ -972,6 +990,7 @@ async function fetchTweetTimeline(
   operation: GraphQLOperation,
   variables: Record<string, any>,
   instructionsPath: string[],
+  fallbackInstructionsPath?: string[],
 ): Promise<{ twitterPosts: TwitterPost[]; cursor: string | null }> {
   const resp = await graphqlRequest(operation, {
     method: 'GET',
@@ -979,6 +998,7 @@ async function fetchTweetTimeline(
     query: {
       variables: JSON.stringify(variables),
       features: TWEET_TIMELINE_FEATURES,
+      fieldToggles: JSON.stringify({ withArticlePlainText: false }),
     },
     on429: handle429,
   });
@@ -991,7 +1011,12 @@ async function fetchTweetTimeline(
       .join('；');
     throw new Error(`X API 返回错误：${msg || '未知错误'}`);
   }
-  const instructions = R.path<any[]>(instructionsPath)(resp.body) || [];
+  const instructions =
+    R.path<any[]>(instructionsPath)(resp.body) ||
+    (fallbackInstructionsPath
+      ? R.path<any[]>(fallbackInstructionsPath)(resp.body)
+      : undefined) ||
+    [];
   const { posts, cursor } = extractTimelinePosts(instructions);
   log.info('timeline posts', posts.length, 'cursor', cursor);
   // 没有任何推文时视为到底，避免拿着空页游标无限翻页
@@ -1017,6 +1042,7 @@ export async function searchTimeline(
       ...(cursor ? { cursor } : {}),
       querySource: 'typed_query',
       product,
+      withGrokTranslatedBio: false,
     },
     ['data', 'search_by_raw_query', 'search_timeline', 'timeline', 'instructions'],
   );
@@ -1038,8 +1064,8 @@ export async function getLikes(
       withClientEventToken: false,
       withBirdwatchNotes: false,
       withVoice: true,
-      withV2Timeline: true,
     },
+    ['data', 'user', 'result', 'timeline', 'timeline', 'instructions'],
     ['data', 'user', 'result', 'timeline_v2', 'timeline', 'instructions'],
   );
 }

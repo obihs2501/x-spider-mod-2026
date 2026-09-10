@@ -4,7 +4,7 @@ import { App, Button, Dropdown, Select } from 'antd';
 import { ExportOutlined } from '@ant-design/icons';
 import { exportDownloadTasks } from '../../utils/export';
 import * as R from 'ramda';
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FixedSizeList, ListChildComponentProps, areEqual } from 'react-window';
 import { DownloadTask } from '../../interfaces/DownloadTask';
 import { useDownloadStore } from '../../stores/download';
@@ -83,6 +83,16 @@ export const DownloadList: React.FC<DownloadListProps> = ({
   });
 
   useEventListener('resize', updateListHeight);
+
+  // 「任务创建中」「失败队列」面板出现/消失会挤压列表区域，需要重新量高，
+  // 否则虚拟列表高度过期：底部被截断或出现双滚动条
+  useEffect(() => {
+    const el = listRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => updateListHeight());
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [updateListHeight]);
 
   const filterTasks = useCallback(
     R.pipe<[DownloadTask[]], DownloadTask[], DownloadTask[]>(

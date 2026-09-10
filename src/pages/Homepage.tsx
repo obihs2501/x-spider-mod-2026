@@ -146,11 +146,10 @@ export const Homepage: React.FC = () => {
     }
   };
 
-  return (
-    <div className="flex flex-col h-screen">
-      <div>
-        <PageHeader />
-        <div className="shrink-0">
+  const listActive = mode === 'user' ? !!userInfo.data : !!postList.list;
+
+  const header = (
+    <div className="shrink-0">
           <Segmented
             className="mb-3"
             value={mode}
@@ -348,15 +347,13 @@ export const Homepage: React.FC = () => {
             </>
           )}
         </div>
-      </div>
-      {(mode === 'user' ? !!userInfo.data : !!postList.list) && (
-        <section
-          className="relative grow mt-4 pb-4 overflow-hidden h-full min-h-[50vh]"
-          aria-label="内容预览"
-        >
-          <PostListGridView />
-        </section>
-      )}
+  );
+
+  return (
+    <div className="flex flex-col h-screen overflow-hidden">
+      <PageHeader />
+      {/* 整页只有一个滚动区：搜索框、下载配置、博主卡片与媒体网格一起滚动 */}
+      <PostListGridView header={header} active={listActive} />
     </div>
   );
 };

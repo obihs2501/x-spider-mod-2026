@@ -90,6 +90,9 @@ export interface GalleryStore {
   /** 右侧内容区顶部的子文件夹卡片是否收起 */
   subfoldersCollapsed: boolean;
   setSubfoldersCollapsed: (v: boolean) => void;
+  /** 收起右侧内容区，左侧文件夹列表铺满整页，方便快速找博主 */
+  contentCollapsed: boolean;
+  setContentCollapsed: (v: boolean) => void;
   /** 视频卡片自动生成首帧缩略图 */
   videoThumbs: boolean;
   setVideoThumbs: (v: boolean) => void;
@@ -198,6 +201,8 @@ export const useGalleryStore = create<GalleryStore>()(
       setSidebarCollapsed: (v) => set({ sidebarCollapsed: v }),
       subfoldersCollapsed: false,
       setSubfoldersCollapsed: (v) => set({ subfoldersCollapsed: v }),
+      contentCollapsed: false,
+      setContentCollapsed: (v) => set({ contentCollapsed: v }),
       videoThumbs: true,
       setVideoThumbs: (v) => set({ videoThumbs: v }),
 
@@ -416,6 +421,7 @@ export const useGalleryStore = create<GalleryStore>()(
           groupByBlogger: state.groupByBlogger,
           sidebarCollapsed: state.sidebarCollapsed,
           subfoldersCollapsed: state.subfoldersCollapsed,
+          contentCollapsed: state.contentCollapsed,
           videoThumbs: state.videoThumbs,
         }) as GalleryStore,
       migrate: (persisted: any, version) => {

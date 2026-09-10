@@ -33,40 +33,40 @@ export interface QueryIdEntry {
 
 export const DEFAULT_QUERY_IDS: Record<GraphQLOperation, QueryIdEntry> = {
   UserByScreenName: {
-    primary: 'sLVLhk0bGj3MVFEKTdax1w',
-    fallbacks: ['NimuplG1OB7Fd2btCLdBOw'],
+    primary: 'ck5KkZ8t5cOmoLssopN99Q',
+    fallbacks: ['sLVLhk0bGj3MVFEKTdax1w', 'NimuplG1OB7Fd2btCLdBOw'],
   },
   UserMedia: {
-    primary: 'YqiE3JL1KNgf9nSljYdxaA',
-    fallbacks: ['cEjpJXA15Ok78yO4TUQPeQ'],
+    primary: 'jCRhbOzdgOHp6u9H4g2tEg',
+    fallbacks: ['YqiE3JL1KNgf9nSljYdxaA', 'cEjpJXA15Ok78yO4TUQPeQ'],
   },
   UserTweets: {
-    primary: 'HuTx74BxAnezK1gWvYY7zg',
-    fallbacks: ['9zyyd1hebl7oNWIPdA8HRw'],
+    primary: 'E8Wq-_jFSaU7hxVcuOPR9g',
+    fallbacks: ['HuTx74BxAnezK1gWvYY7zg', '9zyyd1hebl7oNWIPdA8HRw'],
   },
   TweetResultByRestId: {
-    primary: 'D_jNhjWZeRZT5NURzfJZSQ',
-    fallbacks: [],
+    primary: 'qxWQxcMLiTPcavz9Qy5hwQ',
+    fallbacks: ['D_jNhjWZeRZT5NURzfJZSQ'],
   },
   ListMembers: {
-    primary: '3dQPyRyAj6Lslp4e0ClXzg',
-    fallbacks: [],
+    primary: 'naea_MSad4pOb-D6_oVv_g',
+    fallbacks: ['3dQPyRyAj6Lslp4e0ClXzg'],
   },
   Following: {
-    primary: '7FEKOPNAvxWASt6v9gfCXw',
-    fallbacks: [],
+    primary: 'SaWqzw0TFAWMx1nXWjXoaQ',
+    fallbacks: ['7FEKOPNAvxWASt6v9gfCXw'],
   },
   SearchTimeline: {
-    primary: 'nK1dw4oV3k4w5TdtcAdSww',
-    fallbacks: [],
+    primary: '4fpceYZ6-YQCx_JSl_Cn_A',
+    fallbacks: ['nK1dw4oV3k4w5TdtcAdSww'],
   },
   Likes: {
-    primary: 'aeJWz--kknVBOl7wQ7gh7Q',
-    fallbacks: [],
+    primary: 'TGEKkJG_meudeaFcqaxM-Q',
+    fallbacks: ['aeJWz--kknVBOl7wQ7gh7Q'],
   },
   Bookmarks: {
-    primary: 'qToeLeMs43Q8cr7tRYXmJw',
-    fallbacks: [],
+    primary: 'pLtjrO4ubNh996M_Cubwsg',
+    fallbacks: ['qToeLeMs43Q8cr7tRYXmJw'],
   },
 };
 

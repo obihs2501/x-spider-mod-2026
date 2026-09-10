@@ -118,6 +118,8 @@ export const Gallery: React.FC = () => {
     setVideoThumbs,
     subfoldersCollapsed,
     setSubfoldersCollapsed,
+    contentCollapsed,
+    setContentCollapsed,
     folderSearch,
     mediaSearch,
     setMediaSearch,
@@ -412,11 +414,18 @@ export const Gallery: React.FC = () => {
             groups={groups}
             selectedPath={rootFolder?.path}
             loading={foldersLoading}
-            onSelect={(folder) => enterFolder(folder, [folder])}
+            onSelect={(folder) => {
+              // 收起内容区时点击博主：自动展开内容区并进入
+              if (useGalleryStore.getState().contentCollapsed) {
+                setContentCollapsed(false);
+              }
+              enterFolder(folder, [folder]);
+            }}
             onRefresh={refreshFolders}
             onOpenRoot={() => shell.open(saveDirBase)}
           />
 
+          {!contentCollapsed && (
           <section className="flex flex-col grow min-w-0 min-h-0">
             {!currentFolder ? (
               <div className="grow flex flex-col items-center justify-center text-ant-color-text-tertiary">
@@ -547,27 +556,33 @@ export const Gallery: React.FC = () => {
                     className="w-44"
                   />
                   <span className="ml-auto flex items-center gap-1.5">
-                    {subfolders.length > 0 && (
-                      <Tooltip
-                        title={
-                          subfoldersCollapsed
+                    <Tooltip
+                      title={
+                        subfolders.length === 0
+                          ? '当前文件夹没有子文件夹'
+                          : subfoldersCollapsed
                             ? `展开子文件夹（${subfolders.length}）`
                             : `收起子文件夹（${subfolders.length}）`
+                      }
+                    >
+                      <Button
+                        size="small"
+                        disabled={subfolders.length === 0}
+                        type={
+                          subfolders.length > 0 && !subfoldersCollapsed
+                            ? 'primary'
+                            : 'default'
+                        }
+                        ghost={subfolders.length > 0 && !subfoldersCollapsed}
+                        icon={<FolderFilled />}
+                        onClick={() =>
+                          setSubfoldersCollapsed(!subfoldersCollapsed)
                         }
                       >
-                        <Button
-                          size="small"
-                          type={subfoldersCollapsed ? 'default' : 'primary'}
-                          ghost={!subfoldersCollapsed}
-                          icon={<FolderFilled />}
-                          onClick={() =>
-                            setSubfoldersCollapsed(!subfoldersCollapsed)
-                          }
-                        >
-                          {subfoldersCollapsed ? '展开文件夹' : '收起文件夹'}
-                        </Button>
-                      </Tooltip>
-                    )}
+                        {subfoldersCollapsed ? '展开文件夹' : '收起文件夹'}
+                        {subfolders.length > 0 && ` (${subfolders.length})`}
+                      </Button>
+                    </Tooltip>
                     <Select
                       size="small"
                       value={mediaSortBy}
@@ -751,6 +766,7 @@ export const Gallery: React.FC = () => {
               </>
             )}
           </section>
+          )}
         </div>
       )}
       <MediaLightbox

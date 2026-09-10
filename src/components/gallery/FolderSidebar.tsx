@@ -4,6 +4,7 @@ import {
   CaretDownOutlined,
   CaretRightOutlined,
   CheckOutlined,
+  ColumnWidthOutlined,
   FolderFilled,
   FolderOpenOutlined,
   MenuFoldOutlined,
@@ -11,6 +12,7 @@ import {
   ReloadOutlined,
   SearchOutlined,
   SortAscendingOutlined,
+  VerticalRightOutlined,
 } from '@ant-design/icons';
 import { Avatar, Button, Dropdown, Empty, Input, Tooltip } from 'antd';
 import clsx from 'clsx';
@@ -114,6 +116,8 @@ export const FolderSidebar: React.FC<FolderSidebarProps> = ({
     setGroupByBlogger,
     sidebarCollapsed,
     setSidebarCollapsed,
+    contentCollapsed,
+    setContentCollapsed,
   } = useGalleryStore((s) => ({
     folderSearch: s.folderSearch,
     setFolderSearch: s.setFolderSearch,
@@ -125,6 +129,8 @@ export const FolderSidebar: React.FC<FolderSidebarProps> = ({
     setGroupByBlogger: s.setGroupByBlogger,
     sidebarCollapsed: s.sidebarCollapsed,
     setSidebarCollapsed: s.setSidebarCollapsed,
+    contentCollapsed: s.contentCollapsed,
+    setContentCollapsed: s.setContentCollapsed,
   }));
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(
     () => new Set(),
@@ -169,7 +175,7 @@ export const FolderSidebar: React.FC<FolderSidebarProps> = ({
     return result;
   }, [groupByBlogger, groups, items]);
 
-  if (sidebarCollapsed) {
+  if (sidebarCollapsed && !contentCollapsed) {
     return (
       <aside className="shrink-0 w-10 flex flex-col items-center pt-1 gap-2 border-r border-ant-color-border-secondary mr-3">
         <Tooltip title="展开文件夹列表" placement="right">
@@ -214,8 +220,8 @@ export const FolderSidebar: React.FC<FolderSidebarProps> = ({
     },
   ];
 
-  const renderRows = (list: GalleryFolderItem[]) =>
-    list.map((item) => (
+  const renderRows = (list: GalleryFolderItem[]) => {
+    const rows = list.map((item) => (
       <FolderRow
         key={item.folder.path}
         item={item}
@@ -223,9 +229,25 @@ export const FolderSidebar: React.FC<FolderSidebarProps> = ({
         onSelect={onSelect}
       />
     ));
+    // 内容区收起时列表铺满整页，按多列网格排布以一屏看到更多博主
+    return contentCollapsed ? (
+      <div className="grid gap-x-3 grid-cols-[repeat(auto-fill,minmax(230px,1fr))]">
+        {rows}
+      </div>
+    ) : (
+      rows
+    );
+  };
 
   return (
-    <aside className="shrink-0 w-64 flex flex-col min-h-0 border-r border-ant-color-border-secondary pr-3 mr-3">
+    <aside
+      className={clsx(
+        'shrink-0 flex flex-col min-h-0',
+        contentCollapsed
+          ? 'w-full'
+          : 'w-64 border-r border-ant-color-border-secondary pr-3 mr-3',
+      )}
+    >
       <div className="flex items-center gap-1 mb-2">
         <span className="font-bold text-base flex-1 truncate">
           文件夹
@@ -275,14 +297,37 @@ export const FolderSidebar: React.FC<FolderSidebarProps> = ({
             <Button type="text" size="small" icon={<SortAscendingOutlined />} />
           </Tooltip>
         </Dropdown>
-        <Tooltip title="收起文件夹列表">
+        <Tooltip
+          title={
+            contentCollapsed
+              ? '展开右侧内容区'
+              : '收起右侧内容区，列表铺满整页方便找博主'
+          }
+        >
           <Button
-            type="text"
+            type={contentCollapsed ? 'primary' : 'text'}
+            ghost={contentCollapsed}
             size="small"
-            icon={<MenuFoldOutlined />}
-            onClick={() => setSidebarCollapsed(true)}
+            icon={
+              contentCollapsed ? (
+                <ColumnWidthOutlined />
+              ) : (
+                <VerticalRightOutlined />
+              )
+            }
+            onClick={() => setContentCollapsed(!contentCollapsed)}
           />
         </Tooltip>
+        {!contentCollapsed && (
+          <Tooltip title="收起文件夹列表">
+            <Button
+              type="text"
+              size="small"
+              icon={<MenuFoldOutlined />}
+              onClick={() => setSidebarCollapsed(true)}
+            />
+          </Tooltip>
+        )}
       </div>
       <Input
         size="small"
