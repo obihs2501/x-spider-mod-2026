@@ -79,5 +79,5 @@ jobs:
           TAG="v${VERSION}-build.${GITHUB_RUN_NUMBER}"
           gh release create "$TAG" ./src-tauri/target/release/bundle/nsis/* \
             --title "$TAG" \
-            --notes "v1.7.7 修复：窗口失焦/最小化后下载停滞的问题。原因是 WebView2 对后台窗口做定时器节流（链式定时器限到 1s，超 5 分钟进入每分钟 1 次的密集节流），导致前端驱动的任务调度、翻页解析、队列推进近乎停摆。现通过 additionalBrowserArgs 关闭后台节流（disable-background-timer-throttling / IntensiveWakeUpThrottling / CalculateNativeWinOcclusion 等），后台挂机下载不再掉速。" \
+            --notes "v1.8.0 画廊重构：改为左右分栏布局，左侧为可搜索的博主/文件夹列表（头像、媒体数量、按博主分组折叠），右侧直接展示内容，切换博主不再需要来回返回；新增 图片/视频 类型筛选、文件名搜索、按名称/修改时间/大小排序、3～10 列自由调节、滚动到底自动加载；图片与视频统一为一个全屏预览层，支持 ← → 切换、Esc 关闭、滚轮缩放、拖拽平移；视频卡片自动生成首帧缩略图并显示时长；新增 Rust 端目录读取命令一次返回元数据，打开文件夹时自动检测目录变化并重扫。" \
             --latest

@@ -3,6 +3,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { createTauriFileStorage } from './persist/tauri-file-storage';
 import { useBloggerStore } from './bloggers';
+import { parseBloggerFolder } from '../utils/blogger-folder';
 
 const MEDIA_EXTS = [
   'jpg',
@@ -22,15 +23,6 @@ const MEDIA_EXTS = [
 function extractPostId(fileName: string): string | null {
   const m = fileName.match(/(\d{15,20})/);
   return m ? m[1] : null;
-}
-
-/** 从文件夹名中提取博主，如「____Ncms (@ncmsncmsncms)」→ {name, screenName} */
-function parseBloggerFolder(
-  folderName: string,
-): { name: string; screenName: string } | null {
-  const m = folderName.match(/^(.*?)\s*\(@([A-Za-z0-9_]{1,20})\)\s*$/);
-  if (!m) return null;
-  return { name: m[1].trim() || m[2], screenName: m[2] };
 }
 
 /** 从文件名中提取日期，如「[2026-07-09] xxx.jpg」 */

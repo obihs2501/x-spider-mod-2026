@@ -1,102 +1,103 @@
 /* eslint-disable react/prop-types */
-import { fs, shell, tauri } from '@tauri-apps/api';
-import { invoke } from '@tauri-apps/api/tauri';
-import { App, Button, Empty, Image, Segmented, Spin } from 'antd';
 import {
-  ArrowLeftOutlined,
+  AppstoreOutlined,
   FolderFilled,
   FolderOpenOutlined,
-  PlayCircleFilled,
+  LinkOutlined,
+  PictureOutlined,
   ReloadOutlined,
+  SearchOutlined,
+  SettingOutlined,
+  SortAscendingOutlined,
+  SortDescendingOutlined,
   UnorderedListOutlined,
-  AppstoreOutlined,
-  SwapOutlined,
-  RotateLeftOutlined,
-  RotateRightOutlined,
-  ZoomOutOutlined,
-  ZoomInOutlined,
-  VerticalAlignTopOutlined,
 } from '@ant-design/icons';
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
-import { PageHeader } from '../components/PageHeader';
-import { useSettingsStore } from '../stores/settings';
+import { shell, tauri } from '@tauri-apps/api';
 import {
-  GALLERY_PAGE_SIZE,
+  App,
+  Avatar,
+  Button,
+  Empty,
+  Input,
+  Popover,
+  Segmented,
+  Select,
+  Slider,
+  Spin,
+  Switch,
+  Tooltip,
+} from 'antd';
+import clsx from 'clsx';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { FolderSidebar } from '../components/gallery/FolderSidebar';
+import { MediaLightbox } from '../components/gallery/MediaLightbox';
+import { MediaRow, MediaTile } from '../components/gallery/MediaTile';
+import { GalleryFolderItem } from '../components/gallery/types';
+import { PageHeader } from '../components/PageHeader';
+import { useBloggerStore } from '../stores/bloggers';
+import {
+  GALLERY_MAX_COLUMNS,
+  GALLERY_MIN_COLUMNS,
   GalleryFolder,
+  GalleryMedia,
   useGalleryStore,
 } from '../stores/gallery';
-import { VideoPreviewModal } from '../components/media/VideoPreviewModal';
+import { useLocalIndexStore } from '../stores/local-index';
+import { useSettingsStore } from '../stores/settings';
+import { buildUserUrl } from '../twitter/url';
+import { parseBloggerFolder } from '../utils/blogger-folder';
+import { compareNames, formatRelativeDate } from '../utils/gallery-media';
+import { showInFolder } from '../utils/shell';
 
-const IMAGE_EXTS = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'];
-const VIDEO_EXTS = ['mp4', 'mov', 'webm', 'mkv', 'm4v'];
-
-const COLUMN_OPTIONS = [3, 4, 5, 6, 8];
-const COLUMN_CLASS: Record<number, string> = {
-  3: 'grid-cols-3',
-  4: 'grid-cols-4',
-  5: 'grid-cols-5',
-  6: 'grid-cols-6',
-  8: 'grid-cols-8',
-};
-
-function classifyFile(name: string): 'image' | 'video' | null {
-  const ext = name.split('.').pop()?.toLowerCase() || '';
-  if (IMAGE_EXTS.includes(ext)) return 'image';
-  if (VIDEO_EXTS.includes(ext)) return 'video';
-  return null;
+async function waitHydrated(persistApi: {
+  hasHydrated: () => boolean;
+  onFinishHydration: (fn: () => void) => () => void;
+}) {
+  if (persistApi.hasHydrated()) return;
+  await new Promise<void>((resolve) => {
+    const unsub = persistApi.onFinishHydration(() => {
+      unsub();
+      resolve();
+    });
+  });
 }
 
-/** 视频占位块，点击后在可关闭预览层中播放，避免批量加载吃内存 */
-const VideoTile: React.FC<{
-  name: string;
-  onPreview: () => void;
-}> = ({ name, onPreview }) => (
+const SubfolderCard: React.FC<{
+  folder: GalleryFolder;
+  list: boolean;
+  onOpen: () => void;
+}> = ({ folder, list, onOpen }) => (
   <button
-    className="w-full h-full flex flex-col items-center justify-center bg-[#3D3929] text-white"
-    onClick={onPreview}
-    title={`预览 ${name}`}
+    className={clsx(
+      'flex items-center gap-3 text-left bg-ant-color-bg-container border border-ant-color-border-secondary hover:border-ant-color-primary transition-colors',
+      list ? 'w-full p-3 rounded-lg' : 'p-3 rounded-xl',
+    )}
+    onClick={onOpen}
+    title={folder.name}
   >
-    <PlayCircleFilled className="text-4xl opacity-80" />
-    <span className="mt-2 text-xs opacity-60">点击预览</span>
+    <FolderFilled className="text-2xl text-ant-color-primary shrink-0" />
+    <span className="min-w-0 flex-1">
+      <span className="block truncate text-sm">{folder.name}</span>
+      <span className="block text-xs text-ant-color-text-tertiary">
+        {formatRelativeDate(folder.modifiedAt) || '文件夹'}
+      </span>
+    </span>
   </button>
 );
-
-// 画廊默认不自动刷新：只有从未扫描过或保存路径变化时才自动扫一次，
-// 其余时候仅在用户点「刷新」时做增量校验（modifiedAt 对比）
 
 export const Gallery: React.FC = () => {
   const { message } = App.useApp();
   const saveDirBase = useSettingsStore((s) => s.download.saveDirBase);
-  const [loading, setLoading] = useState(false);
-  const [videoPreview, setVideoPreview] = useState<{
-    src: string;
-    title: string;
-    path: string;
-  } | null>(null);
-  const openFolderTokenRef = useRef(0);
   const {
     folders,
-    setFolders,
-    setFoldersLoaded,
-    setFoldersDir,
+    foldersLoading,
     folderStack,
-    setFolderStack,
     medias,
-    setMedias,
     subfolders,
-    setSubfolders,
+    scanning,
     mediaCache,
-    setMediaCache,
-    invalidateMediaCache,
     visibleCount,
-    setVisibleCount,
-    resetVisibleCount,
+    showMore,
     columns,
     setColumns,
     fitMode,
@@ -104,753 +105,608 @@ export const Gallery: React.FC = () => {
     viewMode,
     setViewMode,
     folderSortBy,
-    setFolderSortBy,
     folderSortOrder,
-    setFolderSortOrder,
     mediaSortBy,
     setMediaSortBy,
     mediaSortOrder,
     setMediaSortOrder,
+    typeFilter,
+    setTypeFilter,
+    videoThumbs,
+    setVideoThumbs,
+    folderSearch,
+    mediaSearch,
+    setMediaSearch,
+    loadFolders,
+    openFolder,
+    goBack,
   } = useGalleryStore();
+  const { bloggers, groups } = useBloggerStore((s) => ({
+    bloggers: s.bloggers,
+    groups: s.groups,
+  }));
+  const bloggerStats = useLocalIndexStore((s) => s.bloggerStats);
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+
   const currentFolder = folderStack[folderStack.length - 1] || null;
-  const foldersRef = useRef(folders);
-  foldersRef.current = folders;
+  const rootFolder = folderStack[0] || null;
 
-  // 顶层：只读取一层子文件夹列表（不递归，开销极小）
-  const loadFolders = useCallback(async () => {
-    if (!saveDirBase) return;
-    setLoading(true);
-    try {
-      if (!(await fs.exists(saveDirBase))) {
-        setFolders([]);
-        return;
-      }
-      const entries = await fs.readDir(saveDirBase);
-      const directoryEntries: fs.FileEntry[] = [];
-      for (const entry of entries) {
-        if (!entry.name || classifyFile(entry.name)) continue;
-        try {
-          await fs.readDir(entry.path);
-          directoryEntries.push(entry);
-        } catch {
-          // 非目录，跳过
-        }
-      }
-      const metadata = await invoke<{ path: string; modifiedAt?: number }[]>(
-        'filesystem_metadata',
-        {
-          paths: directoryEntries.map((entry) => entry.path),
-        },
-      );
-      const modifiedMap = new Map(
-        metadata.map((item) => [item.path, item.modifiedAt]),
-      );
-      const previousMap = new Map(
-        foldersRef.current.map((folder) => [folder.path, folder]),
-      );
-      const result: GalleryFolder[] = directoryEntries.map((entry) => {
-        const modifiedAt = modifiedMap.get(entry.path);
-        const previous = previousMap.get(entry.path);
-        if (previous && previous.modifiedAt === modifiedAt) {
-          // 目录未变化：复用摘要
-          return previous;
-        }
-        // 目录有变化：失效旧媒体缓存，下次打开重新扫描
-        invalidateMediaCache(entry.path);
-        return {
-          name: entry.name || '',
-          path: entry.path,
-          modifiedAt,
-        };
-      });
-      // 删除已不存在目录的缓存（各级子目录的缓存跟随其一级目录保留）
-      const stillExists = (cachePath: string) =>
-        result.some(
-          (f) =>
-            cachePath === f.path ||
-            cachePath.startsWith(f.path + '\\') ||
-            cachePath.startsWith(f.path + '/'),
-        );
-      Object.keys(useGalleryStore.getState().mediaCache).forEach((path) => {
-        if (!stillExists(path)) {
-          invalidateMediaCache(path);
-        }
-      });
-      setFolders(result);
-      setFoldersLoaded(true);
-      setFoldersDir(saveDirBase);
-    } catch (err: any) {
+  const reportError = useCallback(
+    (prefix: string, err: any) => {
       log.error(err);
-      message.error(`读取目录失败：${err?.message || err}`);
-    } finally {
-      setLoading(false);
-    }
-  }, [
-    saveDirBase,
-    message,
-    setFolders,
-    setFoldersLoaded,
-    setFoldersDir,
-    invalidateMediaCache,
-  ]);
-
-  // 进入某个文件夹（stack 为包含目标在内的完整层级栈）：
-  // 只扫描当前层级，子文件夹以文件夹形式展示，点击进入下一级
-  const openFolder = useCallback(
-    async (folder: GalleryFolder, stack: GalleryFolder[], force = false) => {
-      const token = ++openFolderTokenRef.current;
-      setFolderStack(stack);
-      resetVisibleCount();
-      const cached = mediaCache[folder.path];
-      // 命中缓存（含空目录缓存）时直接复用
-      if (!force && cached) {
-        setMedias(cached.medias);
-        setSubfolders(cached.subfolders);
-        return;
-      }
-
-      setLoading(true);
-      setMedias([]);
-      setSubfolders([]);
-      try {
-        // 非递归读取：目录的 children 为空数组，文件为 undefined
-        const entries = await fs.readDir(folder.path);
-        if (token !== openFolderTokenRef.current) return;
-        const list: {
-          path: string;
-          name: string;
-          isVideo: boolean;
-        }[] = [];
-        const directoryEntries: { path: string; name: string }[] = [];
-        for (const e of entries) {
-          if (Array.isArray(e.children)) {
-            directoryEntries.push({ path: e.path, name: e.name || '' });
-            continue;
-          }
-          const kind = classifyFile(e.name || '');
-          if (kind) {
-            list.push({
-              path: e.path,
-              name: e.name || '',
-              isVideo: kind === 'video',
-            });
-          }
-        }
-        // 子文件夹数量少，直接取 metadata 供排序展示
-        let nextSubfolders: GalleryFolder[] = directoryEntries.map((d) => ({
-          ...d,
-          modifiedAt: undefined,
-        }));
-        if (directoryEntries.length > 0) {
-          const dirMetadata = await invoke<
-            { path: string; modifiedAt?: number }[]
-          >('filesystem_metadata', {
-            paths: directoryEntries.map((d) => d.path),
-          });
-          if (token !== openFolderTokenRef.current) return;
-          const dirModifiedMap = new Map(
-            dirMetadata.map((item) => [item.path, item.modifiedAt]),
-          );
-          nextSubfolders = directoryEntries.map((d) => ({
-            ...d,
-            modifiedAt: dirModifiedMap.get(d.path),
-          }));
-        }
-        // 仅在需要修改时间排序时才批量取 metadata，减少大文件夹阻塞
-        let enriched = list.map((item) => ({
-          ...item,
-          modifiedAt: undefined as number | undefined,
-        }));
-        if (mediaSortBy === 'modifiedAt' && list.length > 0) {
-          // 分批取 metadata，避免单次 IPC 过大
-          const BATCH = 500;
-          const modifiedMap = new Map<string, number | undefined>();
-          for (let i = 0; i < list.length; i += BATCH) {
-            if (token !== openFolderTokenRef.current) return;
-            const batch = list.slice(i, i + BATCH);
-            const fileMetadata = await invoke<
-              { path: string; modifiedAt?: number }[]
-            >('filesystem_metadata', {
-              paths: batch.map((item) => item.path),
-            });
-            fileMetadata.forEach((item) =>
-              modifiedMap.set(item.path, item.modifiedAt),
-            );
-          }
-          enriched = list.map((item) => ({
-            ...item,
-            modifiedAt: modifiedMap.get(item.path),
-          }));
-        }
-        if (token !== openFolderTokenRef.current) return;
-        setMedias(enriched);
-        setSubfolders(nextSubfolders);
-        setMediaCache(folder.path, {
-          medias: enriched,
-          subfolders: nextSubfolders,
-        });
-      } catch (err: any) {
-        if (token !== openFolderTokenRef.current) return;
-        log.error(err);
-        message.error(`扫描文件失败：${err?.message || err}`);
-      } finally {
-        if (token === openFolderTokenRef.current) {
-          setLoading(false);
-        }
-      }
+      message.error(`${prefix}：${err?.message || err}`);
     },
-    [
-      mediaCache,
-      mediaSortBy,
-      message,
-      resetVisibleCount,
-      setFolderStack,
-      setMediaCache,
-      setMedias,
-      setSubfolders,
-    ],
+    [message],
   );
 
-  // 返回上一级：上级内容命中缓存时瞬时恢复
-  const goBack = useCallback(() => {
-    const parentStack = folderStack.slice(0, -1);
-    const parent = parentStack[parentStack.length - 1];
-    if (parent) {
-      openFolder(parent, parentStack);
-    } else {
-      setFolderStack([]);
-      setMedias([]);
-      setSubfolders([]);
+  const refreshFolders = useCallback(async () => {
+    if (!saveDirBase) return;
+    try {
+      await loadFolders(saveDirBase);
+    } catch (err) {
+      reportError('读取目录失败', err);
     }
-  }, [folderStack, openFolder, setFolderStack, setMedias, setSubfolders]);
+  }, [loadFolders, reportError, saveDirBase]);
 
-  // 默认不自动刷新：仅在从未扫描过、或保存路径发生变化时自动扫描一次。
-  // 等持久化状态恢复完成后再判断，避免启动瞬间误判为「未扫描过」而重扫。
+  const enterFolder = useCallback(
+    async (folder: GalleryFolder, stack: GalleryFolder[], force = false) => {
+      setLightboxIndex(null);
+      try {
+        await openFolder(folder, stack, force);
+      } catch (err) {
+        reportError('扫描文件失败', err);
+        useGalleryStore.getState().closeFolder();
+      }
+    },
+    [openFolder, reportError],
+  );
+
+  // 进入页面：等待持久化状态恢复后校验根目录是否变化（新增/删除文件夹），
+  // 然后处理其他页面请求打开的路径，或恢复上次浏览的文件夹
   useEffect(() => {
     if (!saveDirBase) return;
     let cancelled = false;
     (async () => {
-      const persistApi = useGalleryStore.persist;
-      if (!persistApi.hasHydrated()) {
-        await new Promise<void>((resolve) => {
-          const unsub = persistApi.onFinishHydration(() => {
-            unsub();
-            resolve();
-          });
-        });
+      await waitHydrated(useGalleryStore.persist);
+      if (cancelled) return;
+      const store = useGalleryStore.getState();
+      try {
+        await store.refreshFoldersIfChanged(saveDirBase);
+      } catch (err) {
+        reportError('读取目录失败', err);
       }
       if (cancelled) return;
       const state = useGalleryStore.getState();
-      if (!state.foldersLoaded || state.foldersDir !== saveDirBase) {
-        await loadFolders();
-      }
-      // 如果有待打开的路径，扫描完成后自动打开对应文件夹
-      if (state.pendingOpenPath && !cancelled) {
-        const target = useGalleryStore
-          .getState()
-          .folders.find((f) => f.path === state.pendingOpenPath);
-        if (target) {
-          openFolder(target, [target]);
+      if (state.pendingOpenPath) {
+        const target = state.pendingOpenPath;
+        state.setPendingOpenPath(null);
+        try {
+          const ok = await state.openPath(target);
+          if (!ok) message.warning('画廊中未找到该文件夹，请先刷新文件夹列表');
+        } catch (err) {
+          reportError('扫描文件失败', err);
         }
-        useGalleryStore.getState().setPendingOpenPath(null);
+        return;
+      }
+      const stack = state.folderStack;
+      if (stack.length === 0) return;
+      const leaf = stack[stack.length - 1];
+      if (!state.folders.some((f) => f.path === stack[0].path)) {
+        state.closeFolder();
+        return;
+      }
+      if (!state.mediaCache[leaf.path]) {
+        await enterFolder(leaf, stack);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [saveDirBase, loadFolders, openFolder]);
+  }, [saveDirBase]);
 
-  const compareItems = useCallback(
-    (
-      a: { name: string; modifiedAt?: number },
-      b: { name: string; modifiedAt?: number },
-      sortBy: 'name' | 'modifiedAt',
-    ) => {
-      if (sortBy === 'modifiedAt') {
-        return (a.modifiedAt || 0) - (b.modifiedAt || 0);
+  // ---- 左侧文件夹列表：关联博主头像 / 分组 / 数量 ----
+  const folderItems = useMemo<GalleryFolderItem[]>(() => {
+    const bloggerMap = new Map(
+      bloggers.map((b) => [b.screenName.toLowerCase(), b]),
+    );
+    const statsMap = new Map(
+      Object.entries(bloggerStats).map(([k, v]) => [k.toLowerCase(), v]),
+    );
+    return folders.map((folder) => {
+      const parsed = parseBloggerFolder(folder.name);
+      const key = parsed?.screenName.toLowerCase();
+      const blogger = key ? bloggerMap.get(key) : undefined;
+      const stats = key ? statsMap.get(key) : undefined;
+      const cached = mediaCache[folder.path];
+      return {
+        folder,
+        displayName: blogger?.name || parsed?.name || folder.name,
+        screenName: blogger?.screenName || parsed?.screenName,
+        avatar: blogger?.avatar,
+        groupId: blogger?.groupId,
+        count: stats?.mediaCount ?? cached?.medias.length,
+      };
+    });
+  }, [bloggerStats, bloggers, folders, mediaCache]);
+
+  const sortedFolderItems = useMemo(() => {
+    const q = folderSearch.trim().toLowerCase();
+    const filtered = q
+      ? folderItems.filter(
+          (item) =>
+            item.folder.name.toLowerCase().includes(q) ||
+            item.displayName.toLowerCase().includes(q) ||
+            (item.screenName || '').toLowerCase().includes(q),
+        )
+      : folderItems;
+    const direction = folderSortOrder === 'asc' ? 1 : -1;
+    return [...filtered].sort((a, b) => {
+      const result =
+        folderSortBy === 'modifiedAt'
+          ? (a.folder.modifiedAt || 0) - (b.folder.modifiedAt || 0)
+          : compareNames(a.displayName, b.displayName);
+      return result * direction;
+    });
+  }, [folderItems, folderSearch, folderSortBy, folderSortOrder]);
+
+  const currentItem = useMemo(
+    () =>
+      rootFolder
+        ? folderItems.find((i) => i.folder.path === rootFolder.path)
+        : undefined,
+    [folderItems, rootFolder],
+  );
+
+  // ---- 右侧内容：筛选 + 排序 ----
+  const sortedSubfolders = useMemo(() => {
+    const q = mediaSearch.trim().toLowerCase();
+    const filtered = q
+      ? subfolders.filter((f) => f.name.toLowerCase().includes(q))
+      : subfolders;
+    const direction = folderSortOrder === 'asc' ? 1 : -1;
+    return [...filtered].sort((a, b) => {
+      const result =
+        folderSortBy === 'modifiedAt'
+          ? (a.modifiedAt || 0) - (b.modifiedAt || 0)
+          : compareNames(a.name, b.name);
+      return result * direction;
+    });
+  }, [subfolders, mediaSearch, folderSortBy, folderSortOrder]);
+
+  const typeCounts = useMemo(() => {
+    let images = 0;
+    let videos = 0;
+    for (const m of medias) {
+      if (m.isVideo) videos++;
+      else images++;
+    }
+    return { images, videos };
+  }, [medias]);
+
+  const sortedMedias = useMemo(() => {
+    const q = mediaSearch.trim().toLowerCase();
+    const filtered = medias.filter((m) => {
+      if (typeFilter === 'image' && m.isVideo) return false;
+      if (typeFilter === 'video' && !m.isVideo) return false;
+      if (q && !m.name.toLowerCase().includes(q)) return false;
+      return true;
+    });
+    const direction = mediaSortOrder === 'asc' ? 1 : -1;
+    return filtered.sort((a, b) => {
+      let result: number;
+      if (mediaSortBy === 'modifiedAt') {
+        result = (a.modifiedAt || 0) - (b.modifiedAt || 0);
+      } else if (mediaSortBy === 'size') {
+        result = (a.size || 0) - (b.size || 0);
+      } else {
+        result = compareNames(a.name, b.name);
       }
-      return a.name.localeCompare(b.name, undefined, {
-        numeric: true,
-        sensitivity: 'base',
-      });
+      return result * direction;
+    });
+  }, [medias, mediaSearch, typeFilter, mediaSortBy, mediaSortOrder]);
+
+  const visibleMedias = useMemo(
+    () => sortedMedias.slice(0, visibleCount),
+    [sortedMedias, visibleCount],
+  );
+  const hasMore = visibleCount < sortedMedias.length;
+
+  // 滚动到底部自动加载下一页
+  useEffect(() => {
+    const root = contentRef.current;
+    const sentinel = sentinelRef.current;
+    if (!root || !sentinel || !hasMore) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) showMore();
+      },
+      { root, rootMargin: '600px' },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMore, showMore, visibleMedias.length]);
+
+  // 切换文件夹时滚动回顶部
+  useEffect(() => {
+    contentRef.current?.scrollTo({ top: 0 });
+  }, [currentFolder?.path]);
+
+  const openExternal = useCallback(
+    (m: GalleryMedia) => {
+      shell.open(m.path).catch((err) => reportError('打开失败', err));
     },
-    [],
+    [reportError],
   );
-  const sortedFolders = useMemo(
-    () =>
-      [...folders].sort((a, b) => {
-        const result = compareItems(a, b, folderSortBy);
-        return folderSortOrder === 'asc' ? result : -result;
-      }),
-    [compareItems, folderSortBy, folderSortOrder, folders],
+  const revealInFolder = useCallback(
+    (m: GalleryMedia) => {
+      showInFolder(m.path, true).catch((err) => reportError('打开失败', err));
+    },
+    [reportError],
   );
-  // 文件夹内的子文件夹沿用顶层的文件夹排序设置
-  const sortedSubfolders = useMemo(
-    () =>
-      [...subfolders].sort((a, b) => {
-        const result = compareItems(a, b, folderSortBy);
-        return folderSortOrder === 'asc' ? result : -result;
-      }),
-    [compareItems, folderSortBy, folderSortOrder, subfolders],
+
+  const closeLightbox = useCallback(() => {
+    // 预览时翻到了尚未渲染的项目，关闭后把网格补齐到该位置
+    setLightboxIndex((current) => {
+      if (current !== null && current >= useGalleryStore.getState().visibleCount) {
+        useGalleryStore.setState({ visibleCount: current + 1 });
+      }
+      return null;
+    });
+  }, []);
+
+  const displaySettings = (
+    <div className="w-56 space-y-3">
+      <div>
+        <div className="text-xs text-ant-color-text-secondary mb-1">
+          每行列数：{columns}
+        </div>
+        <Slider
+          min={GALLERY_MIN_COLUMNS}
+          max={GALLERY_MAX_COLUMNS}
+          value={columns}
+          onChange={(v) => setColumns(v)}
+          tooltip={{ open: false }}
+        />
+      </div>
+      <div className="flex items-center justify-between">
+        <span className="text-xs text-ant-color-text-secondary">缩略图</span>
+        <Segmented
+          size="small"
+          value={fitMode}
+          onChange={(v) => setFitMode(v as 'cover' | 'contain')}
+          options={[
+            { label: '裁剪填充', value: 'cover' },
+            { label: '完整显示', value: 'contain' },
+          ]}
+        />
+      </div>
+      <div className="flex items-center justify-between">
+        <span className="text-xs text-ant-color-text-secondary">
+          视频首帧缩略图
+        </span>
+        <Switch size="small" checked={videoThumbs} onChange={setVideoThumbs} />
+      </div>
+    </div>
   );
-  const sortedMedias = useMemo(
-    () =>
-      [...medias].sort((a, b) => {
-        const result = compareItems(a, b, mediaSortBy);
-        return mediaSortOrder === 'asc' ? result : -result;
-      }),
-    [compareItems, mediaSortBy, mediaSortOrder, medias],
-  );
-  const visibleMedias = sortedMedias.slice(0, visibleCount);
+
+  const gridStyle = {
+    gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
+  };
 
   return (
     <div className="flex flex-col h-screen">
       <PageHeader />
-      <div className="flex items-center gap-3 mb-3 flex-wrap">
-        {currentFolder ? (
-          <>
-            <Button icon={<ArrowLeftOutlined />} size="small" onClick={goBack}>
-              返回
-            </Button>
-            <h2 className="font-bold text-lg max-w-[36%] flex items-center gap-1 min-w-0">
-              {folderStack.map((f, i) =>
-                i === folderStack.length - 1 ? (
-                  <span key={f.path} className="truncate" title={f.name}>
-                    {f.name}
-                  </span>
-                ) : (
-                  <React.Fragment key={f.path}>
-                    <button
-                      className="truncate max-w-[160px] text-ant-color-text-tertiary hover:text-ant-color-primary transition-colors"
-                      title={f.name}
-                      onClick={() => openFolder(f, folderStack.slice(0, i + 1))}
-                    >
-                      {f.name}
-                    </button>
-                    <span className="text-gray-400 shrink-0">/</span>
-                  </React.Fragment>
-                ),
-              )}
-            </h2>
-            <span className="text-gray-400 text-sm">
-              {subfolders.length > 0 && `${subfolders.length} 个子文件夹 · `}共{' '}
-              {medias.length} 个文件
-            </span>
-            <Button
-              icon={<ReloadOutlined />}
-              size="small"
-              loading={loading}
-              onClick={() => openFolder(currentFolder, folderStack, true)}
-            >
-              重新扫描
-            </Button>
-            <Button
-              icon={<FolderOpenOutlined />}
-              size="small"
-              onClick={() => shell.open(currentFolder.path)}
-            >
-              打开目录
-            </Button>
-            <span className="ml-auto flex items-center gap-2 text-sm">
-              <Segmented
-                size="small"
-                value={viewMode}
-                onChange={(v) => setViewMode(v as 'thumbnail' | 'list')}
-                options={[
-                  { label: <AppstoreOutlined />, value: 'thumbnail' },
-                  { label: <UnorderedListOutlined />, value: 'list' },
-                ]}
-              />
-              {viewMode === 'thumbnail' && (
-                <>
-                  <span className="text-gray-400">每行</span>
-                  <Segmented
-                    size="small"
-                    value={columns}
-                    onChange={(v) => setColumns(v as number)}
-                    options={COLUMN_OPTIONS}
-                  />
-                </>
-              )}
-              <Segmented
-                size="small"
-                value={fitMode}
-                onChange={(v) => setFitMode(v as 'cover' | 'contain')}
-                options={[
-                  { label: '裁剪填充', value: 'cover' },
-                  { label: '完整显示', value: 'contain' },
-                ]}
-              />
-              <Segmented
-                size="small"
-                value={mediaSortBy}
-                onChange={(v) => setMediaSortBy(v as 'name' | 'modifiedAt')}
-                options={[
-                  { label: '名称', value: 'name' },
-                  { label: '修改时间', value: 'modifiedAt' },
-                ]}
-              />
-              <Segmented
-                size="small"
-                value={mediaSortOrder}
-                onChange={(v) => setMediaSortOrder(v as 'asc' | 'desc')}
-                options={[
-                  { label: '升序', value: 'asc' },
-                  { label: '降序', value: 'desc' },
-                ]}
-              />
-            </span>
-          </>
-        ) : (
-          <>
-            <h2 className="font-bold text-lg">本地画廊</h2>
-            <span className="text-gray-400 text-sm">
-              {folders.length} 个文件夹
-            </span>
-            <Button
-              icon={<ReloadOutlined />}
-              size="small"
-              loading={loading}
-              onClick={loadFolders}
-            >
-              刷新
-            </Button>
-            <Button
-              icon={<FolderOpenOutlined />}
-              size="small"
-              disabled={!saveDirBase}
-              onClick={() => saveDirBase && shell.open(saveDirBase)}
-            >
-              打开根目录
-            </Button>
-            <span className="ml-auto flex items-center gap-2 text-sm">
-              <Segmented
-                size="small"
-                value={viewMode}
-                onChange={(v) => setViewMode(v as 'thumbnail' | 'list')}
-                options={[
-                  { label: <AppstoreOutlined />, value: 'thumbnail' },
-                  { label: <UnorderedListOutlined />, value: 'list' },
-                ]}
-              />
-              {viewMode === 'thumbnail' && (
-                <>
-                  <span className="text-gray-400">每行</span>
-                  <Segmented
-                    size="small"
-                    value={columns}
-                    onChange={(v) => setColumns(v as number)}
-                    options={COLUMN_OPTIONS}
-                  />
-                </>
-              )}
-              <Segmented
-                size="small"
-                value={folderSortBy}
-                onChange={(v) => setFolderSortBy(v as 'name' | 'modifiedAt')}
-                options={[
-                  { label: '名称', value: 'name' },
-                  { label: '修改时间', value: 'modifiedAt' },
-                ]}
-              />
-              <Segmented
-                size="small"
-                value={folderSortOrder}
-                onChange={(v) => setFolderSortOrder(v as 'asc' | 'desc')}
-                options={[
-                  { label: '升序', value: 'asc' },
-                  { label: '降序', value: 'desc' },
-                ]}
-              />
-            </span>
-          </>
-        )}
-      </div>
-
-      {!saveDirBase && (
+      {!saveDirBase ? (
         <Empty description="请先在「设置」中配置保存路径" className="mt-20" />
-      )}
+      ) : (
+        <div className="flex grow min-h-0 pb-4">
+          <FolderSidebar
+            items={sortedFolderItems}
+            totalCount={folders.length}
+            groups={groups}
+            selectedPath={rootFolder?.path}
+            loading={foldersLoading}
+            onSelect={(folder) => enterFolder(folder, [folder])}
+            onRefresh={refreshFolders}
+            onOpenRoot={() => shell.open(saveDirBase)}
+          />
 
-      {loading && (currentFolder || folders.length === 0) && (
-        <div className="flex justify-center mt-20">
-          <Spin tip="正在读取…" />
-        </div>
-      )}
-
-      {/* 文件夹列表视图：后台增量校验时保留已展示的列表，不闪屏 */}
-      {saveDirBase && !currentFolder && (!loading || folders.length > 0) && (
-        <div className="grow overflow-auto pb-6">
-          {folders.length === 0 ? (
-            <Empty description="保存目录下暂无文件夹" className="mt-20" />
-          ) : viewMode === 'list' ? (
-            <div className="space-y-2">
-              {sortedFolders.map((f) => (
-                <button
-                  key={f.path}
-                  className="w-full flex items-center gap-3 p-3 bg-white border-[1px] rounded-lg text-left hover:border-ant-color-primary"
-                  onClick={() => openFolder(f, [f])}
-                >
-                  <FolderFilled className="text-xl text-ant-color-primary" />
-                  <span className="grow truncate">{f.name}</span>
-                  <span className="text-xs text-gray-400">
-                    {f.modifiedAt
-                      ? new Date(f.modifiedAt).toLocaleString()
-                      : '修改时间未知'}
-                  </span>
-                </button>
-              ))}
-            </div>
-          ) : (
-            <div
-              className={`grid ${COLUMN_CLASS[columns] || 'grid-cols-5'} gap-3`}
-            >
-              {sortedFolders.map((f) => (
-                <button
-                  key={f.path}
-                  className="flex items-center gap-3 p-4 bg-white border-[1px] rounded-xl text-left hover:shadow-md transition-shadow"
-                  onClick={() => openFolder(f, [f])}
-                  title={f.name}
-                >
-                  <FolderFilled className="text-2xl text-ant-color-primary shrink-0" />
-                  <span className="truncate">{f.name}</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* 文件夹内视图：先展示子文件夹，再展示本层媒体（分页渲染） */}
-      {!loading && currentFolder && (
-        <div className="grow overflow-auto pb-6">
-          {medias.length === 0 && subfolders.length === 0 ? (
-            <Empty description="该文件夹内没有媒体文件" className="mt-20" />
-          ) : (
-            <>
-              {sortedSubfolders.length > 0 &&
-                (viewMode === 'list' ? (
-                  <div className="space-y-2 mb-3">
-                    {sortedSubfolders.map((f) => (
-                      <button
-                        key={f.path}
-                        className="w-full flex items-center gap-3 p-3 bg-white border-[1px] rounded-lg text-left hover:border-ant-color-primary"
-                        onClick={() => openFolder(f, [...folderStack, f])}
-                      >
-                        <FolderFilled className="text-xl text-ant-color-primary" />
-                        <span className="grow truncate">{f.name}</span>
-                        <span className="text-xs text-gray-400">
-                          {f.modifiedAt
-                            ? new Date(f.modifiedAt).toLocaleString()
-                            : '修改时间未知'}
+          <section className="flex flex-col grow min-w-0 min-h-0">
+            {!currentFolder ? (
+              <div className="grow flex flex-col items-center justify-center text-ant-color-text-tertiary">
+                <PictureOutlined className="text-6xl mb-4 opacity-40" />
+                <p className="text-base">
+                  {folders.length === 0
+                    ? '保存目录下暂无文件夹'
+                    : '从左侧选择一个博主 / 文件夹开始浏览'}
+                </p>
+                <p className="text-xs mt-2 opacity-70">
+                  共 {folders.length} 个文件夹
+                  {foldersLoading && ' · 正在刷新…'}
+                </p>
+              </div>
+            ) : (
+              <>
+                {/* 标题行：博主信息 + 面包屑 + 操作 */}
+                <div className="flex items-center gap-3 mb-2 min-w-0">
+                  {currentItem?.avatar ? (
+                    <Avatar src={currentItem.avatar} size={40} />
+                  ) : (
+                    <span className="w-10 h-10 rounded-full bg-ant-color-fill-secondary flex items-center justify-center shrink-0">
+                      <FolderFilled className="text-xl text-ant-color-primary" />
+                    </span>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1 min-w-0 text-base font-bold leading-6">
+                      {folderStack.map((f, i) => {
+                        const isLast = i === folderStack.length - 1;
+                        const label =
+                          i === 0 ? currentItem?.displayName || f.name : f.name;
+                        return (
+                          <React.Fragment key={f.path}>
+                            {i > 0 && (
+                              <span className="text-ant-color-text-quaternary shrink-0">
+                                /
+                              </span>
+                            )}
+                            {isLast ? (
+                              <span className="truncate" title={f.name}>
+                                {label}
+                              </span>
+                            ) : (
+                              <button
+                                className="truncate max-w-[200px] bg-transparent text-ant-color-text-tertiary hover:text-ant-color-primary transition-colors"
+                                title={f.name}
+                                onClick={() =>
+                                  enterFolder(f, folderStack.slice(0, i + 1))
+                                }
+                              >
+                                {label}
+                              </button>
+                            )}
+                          </React.Fragment>
+                        );
+                      })}
+                    </div>
+                    <div className="text-xs text-ant-color-text-tertiary truncate">
+                      {currentItem?.screenName && folderStack.length === 1 && (
+                        <span className="mr-2">@{currentItem.screenName}</span>
+                      )}
+                      {subfolders.length > 0 && `${subfolders.length} 个子文件夹 · `}
+                      {typeCounts.images} 张图片 · {typeCounts.videos} 个视频
+                      {scanning && (
+                        <span className="ml-2 text-ant-color-primary">
+                          <ReloadOutlined spin /> 正在扫描…
                         </span>
-                      </button>
-                    ))}
+                      )}
+                    </div>
                   </div>
-                ) : (
-                  <div
-                    className={`grid ${COLUMN_CLASS[columns] || 'grid-cols-5'} gap-3 mb-3`}
-                  >
-                    {sortedSubfolders.map((f) => (
-                      <button
-                        key={f.path}
-                        className="flex items-center gap-3 p-4 bg-white border-[1px] rounded-xl text-left hover:shadow-md transition-shadow"
-                        onClick={() => openFolder(f, [...folderStack, f])}
-                        title={f.name}
-                      >
-                        <FolderFilled className="text-2xl text-ant-color-primary shrink-0" />
-                        <span className="truncate">{f.name}</span>
-                      </button>
-                    ))}
+                  <div className="flex items-center gap-1 shrink-0">
+                    {folderStack.length > 1 && (
+                      <Button size="small" onClick={goBack}>
+                        上一级
+                      </Button>
+                    )}
+                    <Tooltip title="重新扫描当前文件夹">
+                      <Button
+                        type="text"
+                        icon={<ReloadOutlined spin={scanning} />}
+                        onClick={() =>
+                          enterFolder(currentFolder, folderStack, true)
+                        }
+                      />
+                    </Tooltip>
+                    <Tooltip title="在资源管理器中打开">
+                      <Button
+                        type="text"
+                        icon={<FolderOpenOutlined />}
+                        onClick={() => shell.open(currentFolder.path)}
+                      />
+                    </Tooltip>
+                    {currentItem?.screenName && (
+                      <Tooltip title="打开 X 主页">
+                        <Button
+                          type="text"
+                          icon={<LinkOutlined />}
+                          onClick={() =>
+                            shell.open(buildUserUrl(currentItem.screenName!))
+                          }
+                        />
+                      </Tooltip>
+                    )}
                   </div>
-                ))}
-              {medias.length === 0 ? null : viewMode === 'list' ? (
-                <div className="space-y-2">
-                  {visibleMedias.map((m) => {
-                    const src = tauri.convertFileSrc(m.path);
-                    return (
-                      <div
-                        key={m.path}
-                        className="flex items-center gap-3 p-2 bg-white border-[1px] rounded-lg"
-                      >
-                        <div className="w-16 h-16 rounded overflow-hidden bg-[#F0EEE6] shrink-0">
-                          {m.isVideo ? (
-                            <VideoTile
-                              name={m.name}
-                              onPreview={() =>
-                                setVideoPreview({
-                                  src,
-                                  title: m.name,
-                                  path: m.path,
-                                })
-                              }
-                            />
-                          ) : (
-                            <Image
-                              src={src}
-                              alt={m.name}
-                              loading="lazy"
-                              width="100%"
-                              height="100%"
-                              style={{ objectFit: fitMode, height: '100%' }}
-                            />
-                          )}
-                        </div>
-                        <span className="grow truncate select-text">
-                          {m.name}
-                        </span>
-                        <span className="text-xs text-gray-400 shrink-0">
-                          {m.modifiedAt
-                            ? new Date(m.modifiedAt).toLocaleString()
-                            : ''}
-                        </span>
-                        <Button size="small" onClick={() => shell.open(m.path)}>
-                          打开
-                        </Button>
-                      </div>
-                    );
-                  })}
                 </div>
-              ) : (
-                <Image.PreviewGroup
-                  preview={{
-                    toolbarRender: (
-                      _,
-                      {
-                        actions: {
-                          onFlipY,
-                          onFlipX,
-                          onRotateLeft,
-                          onRotateRight,
-                          onZoomOut,
-                          onZoomIn,
-                        },
-                        current,
-                      },
-                    ) => {
-                      const currentMedia = visibleMedias[current];
-                      return (
-                        <div className="flex gap-2 items-center">
-                          <Button
-                            size="large"
-                            icon={<FolderOpenOutlined />}
-                            title="用默认程序打开"
-                            onClick={() => {
-                              if (currentMedia) shell.open(currentMedia.path);
-                            }}
-                          />
-                          <Button
-                            size="large"
-                            icon={<VerticalAlignTopOutlined />}
-                            title="垂直翻转"
-                            onClick={onFlipY}
-                          />
-                          <Button
-                            size="large"
-                            icon={<SwapOutlined />}
-                            title="水平翻转"
-                            onClick={onFlipX}
-                          />
-                          <Button
-                            size="large"
-                            icon={<RotateLeftOutlined />}
-                            title="左转"
-                            onClick={onRotateLeft}
-                          />
-                          <Button
-                            size="large"
-                            icon={<RotateRightOutlined />}
-                            title="右转"
-                            onClick={onRotateRight}
-                          />
-                          <Button
-                            size="large"
-                            icon={<ZoomOutOutlined />}
-                            title="缩小"
-                            onClick={onZoomOut}
-                          />
-                          <Button
-                            size="large"
-                            icon={<ZoomInOutlined />}
-                            title="放大"
-                            onClick={onZoomIn}
-                          />
-                        </div>
-                      );
-                    },
-                  }}
-                >
-                  <div
-                    className={`grid ${COLUMN_CLASS[columns] || 'grid-cols-5'} gap-2`}
-                  >
-                    {visibleMedias.map((m) => {
-                      const src = tauri.convertFileSrc(m.path);
-                      return (
-                        <div
-                          key={m.path}
-                          className="relative rounded-lg overflow-hidden aspect-square bg-[#F0EEE6]"
-                          title={m.name}
-                        >
-                          {m.isVideo ? (
-                            <VideoTile
-                              name={m.name}
-                              onPreview={() =>
-                                setVideoPreview({
-                                  src,
-                                  title: m.name,
-                                  path: m.path,
-                                })
-                              }
-                            />
+
+                {/* 工具栏：筛选 / 搜索 / 排序 / 视图 */}
+                <div className="flex items-center gap-2 mb-3 flex-wrap">
+                  <Segmented
+                    size="small"
+                    value={typeFilter}
+                    onChange={(v) => setTypeFilter(v as typeof typeFilter)}
+                    options={[
+                      { label: `全部 ${medias.length}`, value: 'all' },
+                      { label: `图片 ${typeCounts.images}`, value: 'image' },
+                      { label: `视频 ${typeCounts.videos}`, value: 'video' },
+                    ]}
+                  />
+                  <Input
+                    size="small"
+                    allowClear
+                    prefix={
+                      <SearchOutlined className="text-ant-color-text-quaternary" />
+                    }
+                    placeholder="筛选文件名"
+                    value={mediaSearch}
+                    onChange={(e) => setMediaSearch(e.target.value)}
+                    className="w-44"
+                  />
+                  <span className="ml-auto flex items-center gap-1.5">
+                    <Select
+                      size="small"
+                      value={mediaSortBy}
+                      onChange={(v) => setMediaSortBy(v)}
+                      popupMatchSelectWidth={false}
+                      options={[
+                        { label: '按名称', value: 'name' },
+                        { label: '按修改时间', value: 'modifiedAt' },
+                        { label: '按大小', value: 'size' },
+                      ]}
+                    />
+                    <Tooltip
+                      title={mediaSortOrder === 'asc' ? '升序' : '降序'}
+                    >
+                      <Button
+                        size="small"
+                        icon={
+                          mediaSortOrder === 'asc' ? (
+                            <SortAscendingOutlined />
                           ) : (
-                            <Image
-                              src={src}
-                              alt={m.name}
-                              loading="lazy"
-                              width="100%"
-                              height="100%"
-                              style={{ objectFit: fitMode, height: '100%' }}
-                            />
+                            <SortDescendingOutlined />
+                          )
+                        }
+                        onClick={() =>
+                          setMediaSortOrder(
+                            mediaSortOrder === 'asc' ? 'desc' : 'asc',
+                          )
+                        }
+                      />
+                    </Tooltip>
+                    <Segmented
+                      size="small"
+                      value={viewMode}
+                      onChange={(v) => setViewMode(v as 'thumbnail' | 'list')}
+                      options={[
+                        {
+                          label: (
+                            <Tooltip title="网格">
+                              <AppstoreOutlined />
+                            </Tooltip>
+                          ),
+                          value: 'thumbnail',
+                        },
+                        {
+                          label: (
+                            <Tooltip title="列表">
+                              <UnorderedListOutlined />
+                            </Tooltip>
+                          ),
+                          value: 'list',
+                        },
+                      ]}
+                    />
+                    <Popover
+                      content={displaySettings}
+                      trigger="click"
+                      placement="bottomRight"
+                    >
+                      <Tooltip title="显示设置">
+                        <Button size="small" icon={<SettingOutlined />} />
+                      </Tooltip>
+                    </Popover>
+                  </span>
+                </div>
+
+                {/* 内容区 */}
+                <div
+                  ref={contentRef}
+                  className="grow min-h-0 overflow-y-auto pr-1 pb-6"
+                >
+                  {scanning && medias.length === 0 && subfolders.length === 0 ? (
+                    <div className="flex justify-center mt-20">
+                      <Spin tip="正在读取…" />
+                    </div>
+                  ) : medias.length === 0 && subfolders.length === 0 ? (
+                    <Empty
+                      description="该文件夹内没有媒体文件"
+                      className="mt-20"
+                    />
+                  ) : (
+                    <>
+                      {sortedSubfolders.length > 0 && (
+                        <div
+                          className={clsx(
+                            'mb-3',
+                            viewMode === 'list' ? 'space-y-2' : 'grid gap-2',
                           )}
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              shell.open(m.path);
-                            }}
-                            title="用默认程序打开"
-                            className="absolute right-1 top-1 bg-black/70 hover:bg-black/90 text-white text-xs px-2 py-0.5 rounded transition-colors z-10"
-                          >
-                            打开
-                          </button>
-                          <span className="absolute left-1 bottom-1 right-1 truncate bg-black/60 text-white text-[10px] px-1 rounded pointer-events-none">
-                            {m.name}
+                          style={viewMode === 'list' ? undefined : gridStyle}
+                        >
+                          {sortedSubfolders.map((f) => (
+                            <SubfolderCard
+                              key={f.path}
+                              folder={f}
+                              list={viewMode === 'list'}
+                              onOpen={() => enterFolder(f, [...folderStack, f])}
+                            />
+                          ))}
+                        </div>
+                      )}
+                      {sortedMedias.length === 0 ? (
+                        medias.length > 0 && (
+                          <Empty
+                            image={Empty.PRESENTED_IMAGE_SIMPLE}
+                            description="没有符合筛选条件的文件"
+                            className="mt-10"
+                          />
+                        )
+                      ) : viewMode === 'list' ? (
+                        <div className="space-y-2">
+                          {visibleMedias.map((m, i) => (
+                            <MediaRow
+                              key={m.path}
+                              media={m}
+                              src={tauri.convertFileSrc(m.path)}
+                              fitMode={fitMode}
+                              videoThumbs={videoThumbs}
+                              onOpen={() => setLightboxIndex(i)}
+                              onOpenExternal={() => openExternal(m)}
+                              onShowInFolder={() => revealInFolder(m)}
+                            />
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="grid gap-2" style={gridStyle}>
+                          {visibleMedias.map((m, i) => (
+                            <MediaTile
+                              key={m.path}
+                              media={m}
+                              src={tauri.convertFileSrc(m.path)}
+                              fitMode={fitMode}
+                              videoThumbs={videoThumbs}
+                              onOpen={() => setLightboxIndex(i)}
+                              onOpenExternal={() => openExternal(m)}
+                              onShowInFolder={() => revealInFolder(m)}
+                            />
+                          ))}
+                        </div>
+                      )}
+                      {hasMore && (
+                        <div
+                          ref={sentinelRef}
+                          className="flex justify-center py-4 text-xs text-ant-color-text-tertiary"
+                        >
+                          <Spin size="small" />
+                          <span className="ml-2">
+                            已显示 {visibleMedias.length} / {sortedMedias.length}
                           </span>
                         </div>
-                      );
-                    })}
-                  </div>
-                </Image.PreviewGroup>
-              )}
-              {visibleCount < medias.length && (
-                <div className="flex justify-center mt-4">
-                  <Button
-                    onClick={() =>
-                      setVisibleCount((c) => c + GALLERY_PAGE_SIZE)
-                    }
-                  >
-                    加载更多（已显示 {visibleMedias.length} / {medias.length}）
-                  </Button>
+                      )}
+                    </>
+                  )}
                 </div>
-              )}
-            </>
-          )}
+              </>
+            )}
+          </section>
         </div>
       )}
-      <VideoPreviewModal
-        open={!!videoPreview}
-        src={videoPreview?.src}
-        title={videoPreview?.title}
-        filePath={videoPreview?.path}
-        onClose={() => setVideoPreview(null)}
+      <MediaLightbox
+        items={sortedMedias}
+        index={lightboxIndex}
+        onClose={closeLightbox}
+        onNavigate={setLightboxIndex}
+        onOpenExternal={openExternal}
+        onShowInFolder={revealInFolder}
       />
     </div>
   );
