@@ -1,6 +1,8 @@
 /* eslint-disable react/prop-types */
 import { dialog } from '@tauri-apps/api';
-import { Button, Select } from 'antd';
+import { App, Button, Dropdown, Select } from 'antd';
+import { ExportOutlined } from '@ant-design/icons';
+import { exportDownloadTasks } from '../../utils/export';
 import * as R from 'ramda';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { FixedSizeList, ListChildComponentProps, areEqual } from 'react-window';
@@ -57,6 +59,19 @@ export const DownloadList: React.FC<DownloadListProps> = ({
   const [listHeight, setListHeight] = useState(600);
   const [bloggerFilter, setBloggerFilter] = useState<string>('');
   const listRef = useRef<HTMLDivElement>(null);
+  const { message } = App.useApp();
+
+  const exportTasks = async (format: 'csv' | 'json') => {
+    const list = tasksRef.current;
+    if (list.length === 0) return;
+    try {
+      const saved = await exportDownloadTasks(list, format);
+      if (saved) message.success(`已导出 ${list.length} 条记录到 ${saved}`);
+    } catch (err: any) {
+      log.error(err);
+      message.error(`导出失败：${err?.message || err}`);
+    }
+  };
 
   const updateListHeight = useCallback(() => {
     if (!listRef.current) return;
@@ -151,6 +166,20 @@ export const DownloadList: React.FC<DownloadListProps> = ({
           options={bloggers}
           optionFilterProp="label"
         />
+        <Dropdown
+          disabled={tasks.length === 0}
+          menu={{
+            items: [
+              { key: 'csv', label: 'CSV（Excel 可直接打开）' },
+              { key: 'json', label: 'JSON' },
+            ],
+            onClick: ({ key }) => exportTasks(key as 'csv' | 'json'),
+          }}
+        >
+          <Button size="small" icon={<ExportOutlined />}>
+            导出记录
+          </Button>
+        </Dropdown>
       </section>
       <ul className="flex space-x-2 mt-3 pb-2">
         {batchActions?.includes('unpauseAll') && (

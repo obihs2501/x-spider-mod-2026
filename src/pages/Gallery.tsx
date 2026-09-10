@@ -1,6 +1,8 @@
 /* eslint-disable react/prop-types */
 import {
   AppstoreOutlined,
+  CaretDownOutlined,
+  CaretRightOutlined,
   FolderFilled,
   FolderOpenOutlined,
   LinkOutlined,
@@ -114,6 +116,8 @@ export const Gallery: React.FC = () => {
     setTypeFilter,
     videoThumbs,
     setVideoThumbs,
+    subfoldersCollapsed,
+    setSubfoldersCollapsed,
     folderSearch,
     mediaSearch,
     setMediaSearch,
@@ -625,21 +629,49 @@ export const Gallery: React.FC = () => {
                   ) : (
                     <>
                       {sortedSubfolders.length > 0 && (
-                        <div
-                          className={clsx(
-                            'mb-3',
-                            viewMode === 'list' ? 'space-y-2' : 'grid gap-2',
+                        <div className="mb-3">
+                          <button
+                            className="flex items-center gap-1.5 mb-2 text-xs text-ant-color-text-secondary bg-transparent hover:text-ant-color-primary transition-colors"
+                            onClick={() =>
+                              setSubfoldersCollapsed(!subfoldersCollapsed)
+                            }
+                            title={
+                              subfoldersCollapsed
+                                ? '展开子文件夹'
+                                : '收起子文件夹'
+                            }
+                          >
+                            {subfoldersCollapsed ? (
+                              <CaretRightOutlined />
+                            ) : (
+                              <CaretDownOutlined />
+                            )}
+                            <span className="font-semibold">子文件夹</span>
+                            <span className="text-ant-color-text-tertiary">
+                              ({sortedSubfolders.length})
+                            </span>
+                          </button>
+                          {!subfoldersCollapsed && (
+                            <div
+                              className={
+                                viewMode === 'list' ? 'space-y-2' : 'grid gap-2'
+                              }
+                              style={
+                                viewMode === 'list' ? undefined : gridStyle
+                              }
+                            >
+                              {sortedSubfolders.map((f) => (
+                                <SubfolderCard
+                                  key={f.path}
+                                  folder={f}
+                                  list={viewMode === 'list'}
+                                  onOpen={() =>
+                                    enterFolder(f, [...folderStack, f])
+                                  }
+                                />
+                              ))}
+                            </div>
                           )}
-                          style={viewMode === 'list' ? undefined : gridStyle}
-                        >
-                          {sortedSubfolders.map((f) => (
-                            <SubfolderCard
-                              key={f.path}
-                              folder={f}
-                              list={viewMode === 'list'}
-                              onOpen={() => enterFolder(f, [...folderStack, f])}
-                            />
-                          ))}
                         </div>
                       )}
                       {sortedMedias.length === 0 ? (

@@ -1,10 +1,18 @@
 import { create } from 'zustand';
 import { TwitterUser } from '../interfaces/TwitterUser';
-import { getUser, getUserMedias } from '../twitter/api';
+import {
+  getAccountInfo,
+  getBookmarks,
+  getLikes,
+  getUser,
+  getUserMedias,
+  searchTimeline,
+} from '../twitter/api';
 import { TwitterPost } from '../interfaces/TwitterPost';
 import { DownloadFilter } from '../interfaces/DownloadFilter';
 import MediaType from '../enums/MediaType';
 import { produce } from 'immer';
+import { useAccountsStore } from './accounts';
 
 export interface PostListRequest {
   list?: TwitterPost[];
@@ -17,11 +25,23 @@ export interface UserInfoRequest {
   loading: boolean;
 }
 
+/** 主页下载模式：博主/帖子、高级搜索、我的喜欢、我的书签 */
+export type HomepageMode = 'user' | 'search' | 'likes' | 'bookmarks';
+
 export interface HomepageStore {
   keyword: string;
   setKeyword: (kw: string) => void;
   filter: DownloadFilter;
   setFilter: (filter: DownloadFilter) => void;
+
+  mode: HomepageMode;
+  setMode: (mode: HomepageMode) => void;
+  /** 高级搜索语句（支持 X 搜索语法） */
+  searchQuery: string;
+  setSearchQuery: (q: string) => void;
+  /** 登录账号自己的用户信息（我的喜欢 / 书签模式需要） */
+  selfUser?: TwitterUser;
+  loadSelfUser: () => Promise<TwitterUser>;
 
   // 单条帖子解析预览（跨页面保留）
   postPreview: TwitterPost | null;
@@ -38,6 +58,33 @@ export interface HomepageStore {
   loadMorePostList: () => Promise<void>;
 }
 
+type PageFetcher = (
+  cursor?: string,
+) => Promise<{ twitterPosts: TwitterPost[]; cursor: string | null }>;
+
+/** 按当前模式构造分页加载函数；条件不满足（未加载用户/未填搜索词）时返回 null */
+function buildFetcher(state: HomepageStore): PageFetcher | null {
+  switch (state.mode) {
+    case 'search': {
+      const query = state.searchQuery.trim();
+      if (!query) return null;
+      return (cursor) => searchTimeline(query, cursor);
+    }
+    case 'likes': {
+      const id = state.selfUser?.id;
+      if (!id) return null;
+      return (cursor) => getLikes(id, cursor);
+    }
+    case 'bookmarks':
+      return (cursor) => getBookmarks(cursor);
+    default: {
+      const id = state.userInfo.data?.id;
+      if (!id) return null;
+      return (cursor) => getUserMedias(id, cursor);
+    }
+  }
+}
+
 let loadPostListAbortController = new AbortController();
 let loadUserAbortController = new AbortController();
 
@@ -49,6 +96,38 @@ export const useHomepageStore = create<HomepageStore>((set, get) => ({
     source: 'medias',
   },
   setFilter: (filter) => set({ filter }),
+
+  mode: 'user',
+  setMode: (mode) => {
+    if (mode === get().mode) return;
+    loadPostListAbortController.abort();
+    set({
+      mode,
+      postList: { cursor: null, list: undefined, loading: false },
+    });
+  },
+  searchQuery: '',
+  setSearchQuery: (q) => set({ searchQuery: q }),
+  selfUser: undefined,
+  loadSelfUser: async () => {
+    const cached = get().selfUser;
+    if (cached) return cached;
+    const account = useAccountsStore.getState().getActiveAccount();
+    if (!account) {
+      throw new Error('请先在左上角「账号池」中添加已登录的账号');
+    }
+    let screenName = account.screenName;
+    if (!screenName) {
+      const info = await getAccountInfo(account.cookieString);
+      screenName = info.screenName;
+      useAccountsStore
+        .getState()
+        .updateAccount(account.id, { screenName, avatar: info.avatar });
+    }
+    const user = await getUser(screenName);
+    set({ selfUser: user });
+    return user;
+  },
 
   postPreview: null,
   setPostPreview: (post) => set({ postPreview: post }),
@@ -125,7 +204,6 @@ export const useHomepageStore = create<HomepageStore>((set, get) => ({
     loading: false,
     cursor: null,
   },
-  postListGenerator: undefined,
   clearPostList: () => {
     set({
       postList: {
@@ -140,10 +218,12 @@ export const useHomepageStore = create<HomepageStore>((set, get) => ({
     loadPostListAbortController = new AbortController();
     const abortController = loadPostListAbortController;
     const state = get();
-    const userInfo = state.userInfo.data;
+    const fetchPage = buildFetcher(state);
 
-    if (!userInfo) {
-      throw new Error('No userInfo');
+    if (!fetchPage) {
+      throw new Error(
+        state.mode === 'search' ? '请先输入搜索语句' : '未加载用户信息',
+      );
     }
 
     set({
@@ -155,7 +235,7 @@ export const useHomepageStore = create<HomepageStore>((set, get) => ({
     });
 
     try {
-      const { cursor, twitterPosts } = await getUserMedias(userInfo.id);
+      const { cursor, twitterPosts } = await fetchPage();
 
       if (abortController.signal.aborted) {
         return;
@@ -180,13 +260,13 @@ export const useHomepageStore = create<HomepageStore>((set, get) => ({
           loading: false,
         },
       });
-      throw new Error(`加载图片列表失败：${err?.message || '未知原因'}`);
+      throw new Error(`加载列表失败：${err?.message || '未知原因'}`);
     }
   },
   loadMorePostList: async () => {
     const state = get();
     const postList = state.postList;
-    const userInfo = state.userInfo.data;
+    const fetchPage = buildFetcher(state);
 
     if (!postList.list) {
       throw new Error('未初始化列表');
@@ -197,7 +277,7 @@ export const useHomepageStore = create<HomepageStore>((set, get) => ({
     if (!postList.cursor) {
       throw new Error('没有更多数据了');
     }
-    if (!userInfo) {
+    if (!fetchPage) {
       throw new Error('未加载用户信息');
     }
 
@@ -212,10 +292,7 @@ export const useHomepageStore = create<HomepageStore>((set, get) => ({
     const abortController = loadPostListAbortController;
 
     try {
-      const { twitterPosts, cursor } = await getUserMedias(
-        userInfo.id,
-        postList.cursor,
-      );
+      const { twitterPosts, cursor } = await fetchPage(postList.cursor);
 
       if (abortController.signal.aborted) {
         return;

@@ -14,7 +14,13 @@ import { TwitterMedia } from '../interfaces/TwitterMedia';
 import { TwitterPost } from '../interfaces/TwitterPost';
 import { TwitterUser } from '../interfaces/TwitterUser';
 import { AriaStatus, aria2 } from '../utils/aria2';
-import { getUserMedias, getUserTweets } from '../twitter/api';
+import {
+  getBookmarks,
+  getLikes,
+  getUserMedias,
+  getUserTweets,
+  searchTimeline,
+} from '../twitter/api';
 import { useSettingsStore } from './settings';
 import { useAccountsStore } from './accounts';
 import { getDownloadUrl } from '../twitter/utils';
@@ -442,6 +448,105 @@ export const useDownloadStore = create<DownloadStore>()(
   ),
 );
 
+/** X 高级搜索的日期范围超过一个月会丢失大量推文，按此天数拆分为多个小区间 */
+const SEARCH_SEGMENT_DAYS = 31;
+
+type PageFetcher = (
+  cursor?: string,
+) => Promise<{ twitterPosts: TwitterPost[]; cursor: string | null }>;
+
+interface CrawlSegment {
+  since: dayjs.Dayjs;
+  until: dayjs.Dayjs;
+  fetchPage: PageFetcher;
+  label: string;
+}
+
+/**
+ * 按下载源构造要遍历的「分段」：
+ * - 博主 / 喜欢 / 书签：单段，翻页到日期起点即停；
+ * - 高级搜索：指定了日期范围时按 SEARCH_SEGMENT_DAYS 拆分（从新到旧），
+ *   每段在搜索语句后追加 since:/until:，避免 X 搜索大范围丢数据。
+ */
+function buildSegments(
+  task: CreationTask,
+  since: dayjs.Dayjs,
+  until: dayjs.Dayjs,
+): CrawlSegment[] {
+  const { filter, user } = task;
+  switch (filter.source) {
+    case 'search': {
+      const query = (filter.searchQuery || '').trim();
+      // 「至今」预设的起点是 1970 年，此时不做分段（否则会拆出上百段）
+      const bounded = since.year() >= 2006 && filter.dateRange;
+      if (!bounded) {
+        return [
+          {
+            since,
+            until,
+            label: query,
+            fetchPage: (cursor) => searchTimeline(query, cursor),
+          },
+        ];
+      }
+      const segments: CrawlSegment[] = [];
+      let end = until.endOf('day');
+      while (end.isAfter(since)) {
+        let start = end.subtract(SEARCH_SEGMENT_DAYS, 'day').startOf('day');
+        if (start.isBefore(since)) start = since.startOf('day');
+        const sinceStr = start.format('YYYY-MM-DD');
+        // until: 为不含当天，需 +1 天才能覆盖 end 当天
+        const untilStr = end.add(1, 'day').format('YYYY-MM-DD');
+        const rawQuery = `${query} since:${sinceStr} until:${untilStr}`;
+        segments.push({
+          since: start,
+          until: end,
+          label: rawQuery,
+          fetchPage: (cursor) => searchTimeline(rawQuery, cursor),
+        });
+        end = start.subtract(1, 'day').endOf('day');
+      }
+      return segments;
+    }
+    case 'likes':
+      return [
+        {
+          since,
+          until,
+          label: '我的喜欢',
+          fetchPage: (cursor) => getLikes(user.id, cursor),
+        },
+      ];
+    case 'bookmarks':
+      return [
+        {
+          since,
+          until,
+          label: '我的书签',
+          fetchPage: (cursor) => getBookmarks(cursor),
+        },
+      ];
+    case 'tweets':
+      return [
+        {
+          since,
+          until,
+          label: `@${user.screenName} 推文`,
+          fetchPage: (cursor) => getUserTweets(user.id, cursor),
+        },
+      ];
+    default:
+      return [
+        {
+          since,
+          until,
+          label: `@${user.screenName} 媒体`,
+          fetchPage: (cursor) => getUserMedias(user.id, cursor),
+        },
+      ];
+  }
+}
+
 async function runCreationTask(task: CreationTask, abortSignal: AbortSignal) {
   log().info('Run creation task', task);
   const { filter, user } = task;
@@ -458,10 +563,8 @@ async function runCreationTask(task: CreationTask, abortSignal: AbortSignal) {
   let failCount = 0;
 
   const taskStartAt = dayjs();
-  let now = dayjs();
-  const since = filter.dateRange?.[0] || dayjs.unix(0);
-  const until = filter.dateRange?.[1] || now.clone();
-  let nextCursor: string | undefined | null = undefined;
+  const globalSince = filter.dateRange?.[0] || dayjs.unix(0);
+  const globalUntil = filter.dateRange?.[1] || dayjs();
 
   // 增量游标：扫到不晚于该 ID（雪花序）的帖子即停止翻页
   const stopAtTweetId = filter.stopAtTweetId;
@@ -475,8 +578,6 @@ async function runCreationTask(task: CreationTask, abortSignal: AbortSignal) {
     }
   };
 
-  const getListFn = filter.source === 'medias' ? getUserMedias : getUserTweets;
-
   const getMediaCounts = R.reduce((acc: number, elem: TwitterPost) => {
     return acc + (elem.medias?.length || 0);
   }, 0);
@@ -485,6 +586,17 @@ async function runCreationTask(task: CreationTask, abortSignal: AbortSignal) {
   let consecutiveSkipCount = 0;
   const consecutiveSkipThreshold =
     settings.download.consecutiveSkipThreshold || 0;
+  let stoppedByThreshold = false;
+
+  const segments = buildSegments(task, globalSince, globalUntil);
+  log().info('Crawl segments', segments.map((s) => s.label));
+
+  for (const segment of segments) {
+    if (abortSignal.aborted || reachedStopTweet || stoppedByThreshold) break;
+    const { since, until, fetchPage } = segment;
+    let now = dayjs();
+    let nextCursor: string | undefined | null = undefined;
+    log().info('Crawl segment', segment.label);
 
   while (nextCursor !== null && now.isAfter(since) && !reachedStopTweet) {
     if (abortSignal.aborted) {
@@ -492,7 +604,7 @@ async function runCreationTask(task: CreationTask, abortSignal: AbortSignal) {
     }
 
     log().info('CreationTask fetching', nextCursor);
-    const { twitterPosts, cursor } = await getListFn(user.id, nextCursor);
+    const { twitterPosts, cursor } = await fetchPage(nextCursor || undefined);
     if (abortSignal.aborted) break;
     nextCursor = cursor;
 
@@ -626,6 +738,7 @@ async function runCreationTask(task: CreationTask, abortSignal: AbortSignal) {
         log().info(
           `连续跳过 ${consecutiveSkipCount} 个文件，达到阈值 ${consecutiveSkipThreshold}，停止下载`,
         );
+        stoppedByThreshold = true;
         break;
       }
       continue;
@@ -668,6 +781,7 @@ async function runCreationTask(task: CreationTask, abortSignal: AbortSignal) {
     });
 
     if (abortSignal.aborted) break;
+  }
   }
 
   // 任务完整跑完（未被取消）才推进增量游标；中途取消会留下未扫描的空档，

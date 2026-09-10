@@ -839,3 +839,184 @@ export async function getFollowing(
     onProgress,
   );
 }
+
+// ---------------------------------------------------------------------------
+// 高级搜索 / 我的喜欢 / 我的书签（借鉴「蓝鸟猎手」的下载源）
+// GraphQL queryId 会随 X 前端更新而变化，失效时只需更新下面的常量。
+// ---------------------------------------------------------------------------
+const SEARCH_TIMELINE_QUERY_ID = 'nK1dw4oV3k4w5TdtcAdSww';
+const LIKES_QUERY_ID = 'aeJWz--kknVBOl7wQ7gh7Q';
+const BOOKMARKS_QUERY_ID = 'qToeLeMs43Q8cr7tRYXmJw';
+
+/** 推文时间线接口共用的 features：在用户时间线的基础上补齐新接口要求的开关 */
+const TWEET_TIMELINE_FEATURES = JSON.stringify({
+  ...JSON.parse(USER_TIMELINE_FEATURES),
+  profile_label_improvements_pcf_label_in_post_enabled: false,
+  rweb_video_screen_enabled: false,
+  premium_content_api_read_enabled: false,
+  responsive_web_grok_analyze_button_fetch_trends_enabled: false,
+  responsive_web_grok_analyze_post_followups_enabled: false,
+  responsive_web_jetfuel_frame: false,
+  responsive_web_grok_share_attachment_enabled: false,
+  responsive_web_grok_show_grok_translated_post: false,
+  responsive_web_grok_analysis_button_from_backend: false,
+  responsive_web_grok_image_annotation_enabled: false,
+  responsive_web_grok_community_note_auto_translation_is_enabled: false,
+  responsive_web_grok_imagine_annotation_enabled: false,
+  payments_enabled: false,
+  graphql_is_translatable_rweb_tweet_is_translatable_enabled: true,
+  tweet_with_visibility_results_prefer_gql_media_interstitial_enabled: false,
+  responsive_web_media_download_video_enabled: false,
+});
+
+/**
+ * 从时间线指令中提取全部推文与底部游标（搜索 / 喜欢 / 书签共用）。
+ * 兼容 TimelineAddEntries、TimelineReplaceEntry、TimelineAddToModule 三种指令，
+ * 以及单条（TimelineTimelineItem）与模块（TimelineTimelineModule，如搜索的媒体网格）两种条目。
+ */
+function extractTimelinePosts(instructions: any[]): {
+  posts: TwitterPost[];
+  cursor: string | null;
+} {
+  const rawResults: any[] = [];
+  let cursor: string | null = null;
+
+  const pushResult = (result: any) => {
+    if (!result) return;
+    let tweet =
+      result.__typename === 'TweetWithVisibilityResults' ? result.tweet : result;
+    // 转推：取原推文，媒体归属于原作者
+    const retweeted = tweet?.legacy?.retweeted_status_result?.result;
+    if (retweeted) {
+      tweet =
+        retweeted.__typename === 'TweetWithVisibilityResults'
+          ? retweeted.tweet
+          : retweeted;
+    }
+    if (tweet?.legacy && tweet?.rest_id) rawResults.push(tweet);
+  };
+
+  const handleEntry = (entry: any) => {
+    const content = entry?.content;
+    if (!content) return;
+    if (content.entryType === 'TimelineTimelineItem') {
+      pushResult(content.itemContent?.tweet_results?.result);
+    } else if (content.entryType === 'TimelineTimelineModule') {
+      for (const item of content.items || []) {
+        pushResult(item?.item?.itemContent?.tweet_results?.result);
+      }
+    } else if (
+      content.entryType === 'TimelineTimelineCursor' &&
+      content.cursorType === 'Bottom'
+    ) {
+      cursor = content.value || null;
+    }
+  };
+
+  for (const instruction of instructions || []) {
+    if (instruction?.type === 'TimelineAddEntries') {
+      (instruction.entries || []).forEach(handleEntry);
+    } else if (instruction?.type === 'TimelineReplaceEntry') {
+      handleEntry(instruction.entry);
+    } else if (instruction?.type === 'TimelineAddToModule') {
+      for (const item of instruction.moduleItems || []) {
+        pushResult(item?.item?.itemContent?.tweet_results?.result);
+      }
+    }
+  }
+
+  return { posts: mapTwitterPosts(rawResults), cursor };
+}
+
+async function fetchTweetTimeline(
+  url: string,
+  variables: Record<string, any>,
+  instructionsPath: string[],
+): Promise<{ twitterPosts: TwitterPost[]; cursor: string | null }> {
+  const resp = await xRequest({
+    method: 'GET',
+    responseType: 'json',
+    url,
+    query: {
+      variables: JSON.stringify(variables),
+      features: TWEET_TIMELINE_FEATURES,
+    },
+    on429: handle429,
+  });
+  ensureResponse(resp);
+  const apiErrors = R.path<any[]>(['errors'])(resp.body);
+  if (apiErrors?.length) {
+    const msg = apiErrors
+      .map((e: any) => e?.message || e?.code)
+      .filter(Boolean)
+      .join('；');
+    throw new Error(`X API 返回错误：${msg || '未知错误'}`);
+  }
+  const instructions = R.path<any[]>(instructionsPath)(resp.body) || [];
+  const { posts, cursor } = extractTimelinePosts(instructions);
+  log.info('timeline posts', posts.length, 'cursor', cursor);
+  // 没有任何推文时视为到底，避免拿着空页游标无限翻页
+  return { twitterPosts: posts, cursor: posts.length === 0 ? null : cursor };
+}
+
+/**
+ * 高级搜索（需要登录 Cookie）。rawQuery 支持 X 搜索语法，如：
+ *   from:GenshinImpact filter:media since:2024-01-01 until:2024-02-01
+ * product 为 Media 时只返回带媒体的推文。
+ */
+export async function searchTimeline(
+  rawQuery: string,
+  cursor?: string,
+  product: 'Media' | 'Latest' | 'Top' = 'Media',
+  count = 20,
+): Promise<{ twitterPosts: TwitterPost[]; cursor: string | null }> {
+  return fetchTweetTimeline(
+    `https://${HOST}/i/api/graphql/${SEARCH_TIMELINE_QUERY_ID}/SearchTimeline`,
+    {
+      rawQuery,
+      count,
+      ...(cursor ? { cursor } : {}),
+      querySource: 'typed_query',
+      product,
+    },
+    ['data', 'search_by_raw_query', 'search_timeline', 'timeline', 'instructions'],
+  );
+}
+
+/** 登录账号点过喜欢的推文（需要登录 Cookie，userId 为登录账号自己的 ID） */
+export async function getLikes(
+  userId: string,
+  cursor?: string,
+  count = 20,
+): Promise<{ twitterPosts: TwitterPost[]; cursor: string | null }> {
+  return fetchTweetTimeline(
+    `https://${HOST}/i/api/graphql/${LIKES_QUERY_ID}/Likes`,
+    {
+      userId,
+      count,
+      ...(cursor ? { cursor } : {}),
+      includePromotedContent: false,
+      withClientEventToken: false,
+      withBirdwatchNotes: false,
+      withVoice: true,
+      withV2Timeline: true,
+    },
+    ['data', 'user', 'result', 'timeline_v2', 'timeline', 'instructions'],
+  );
+}
+
+/** 登录账号的书签（需要登录 Cookie） */
+export async function getBookmarks(
+  cursor?: string,
+  count = 20,
+): Promise<{ twitterPosts: TwitterPost[]; cursor: string | null }> {
+  return fetchTweetTimeline(
+    `https://${HOST}/i/api/graphql/${BOOKMARKS_QUERY_ID}/Bookmarks`,
+    {
+      count,
+      ...(cursor ? { cursor } : {}),
+      includePromotedContent: false,
+    },
+    ['data', 'bookmark_timeline_v2', 'timeline', 'instructions'],
+  );
+}

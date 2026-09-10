@@ -6,7 +6,6 @@ import * as R from 'ramda';
 import React, { useCallback, useMemo, useState } from 'react';
 import MediaType from '../../enums/MediaType';
 import { TwitterMedia } from '../../interfaces/TwitterMedia';
-import { TwitterPost } from '../../interfaces/TwitterPost';
 import { useDownloadStore } from '../../stores/download';
 import { useHomepageStore } from '../../stores/homepage';
 import { buildPostUrl } from '../../twitter/url';
@@ -30,25 +29,17 @@ export const PostListGridView: React.FC = () => {
     (state) => state.createDownloadTask,
   );
 
-  const mediaList = useMemo<(TwitterMedia & { postId: string })[]>(
+  const mediaList = useMemo<
+    (TwitterMedia & { postId: string; screenName?: string })[]
+  >(
     () =>
-      R.pipe(
-        R.map<TwitterPost, (TwitterMedia & { postId: string })[]>((postItem) =>
-          R.pipe<
-            [TwitterPost],
-            TwitterMedia[] | undefined,
-            TwitterMedia[],
-            (TwitterMedia & { postId: string })[]
-          >(
-            R.prop('medias'),
-            R.defaultTo([]),
-            R.map<TwitterMedia, TwitterMedia & { postId: string }>(
-              R.assoc('postId', postItem.id),
-            ),
-          )(postItem),
-        ),
-        R.flatten,
-      )(postList.list || []),
+      (postList.list || []).flatMap((postItem) =>
+        (postItem.medias || []).map((media) => ({
+          ...media,
+          postId: postItem.id,
+          screenName: postItem.user?.screenName,
+        })),
+      ),
     [postList.list],
   );
 
@@ -91,11 +82,12 @@ export const PostListGridView: React.FC = () => {
       )}
       <ul className="grid grid-cols-[repeat(auto-fill,minmax(12rem,1fr))] gap-2">
         {mediaList.map((media) => {
-          const actionOpen: GridViewItemAction | undefined = userInfo.data
-            ?.screenName
+          // 搜索 / 喜欢 / 书签模式下作者各不相同，优先取推文自带的作者
+          const postScreenName = media.screenName || userInfo.data?.screenName;
+          const actionOpen: GridViewItemAction | undefined = postScreenName
             ? {
                 name: '打开推文',
-                href: buildPostUrl(userInfo.data.screenName, media.postId),
+                href: buildPostUrl(postScreenName, media.postId),
               }
             : undefined;
 
@@ -241,7 +233,7 @@ export const PostListGridView: React.FC = () => {
           </li>
         )}
       </ul>
-      {!postList.loading && userInfo.data && !postList.cursor && (
+      {!postList.loading && postList.list && !postList.cursor && (
         <div
           className="mt-4 text-sm text-ant-color-text-secondary text-center"
           role="alert"

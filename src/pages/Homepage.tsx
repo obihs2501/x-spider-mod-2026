@@ -1,6 +1,12 @@
 /* eslint-disable react/prop-types */
-import { Avatar, Button, Collapse, Input, Space, App } from 'antd';
-import { ArrowLeftOutlined } from '@ant-design/icons';
+import { Avatar, Button, Collapse, Input, Space, App, Segmented } from 'antd';
+import {
+  ArrowLeftOutlined,
+  BookOutlined,
+  HeartOutlined,
+  SearchOutlined,
+  UserOutlined,
+} from '@ant-design/icons';
 import React, { useRef, useState } from 'react';
 import { PageHeader } from '../components/PageHeader';
 import { PostListGridView } from '../components/homepage/PostListGridView';
@@ -25,7 +31,34 @@ export const Homepage: React.FC = () => {
     clearPostList: clearMediaList,
     postPreview,
     setPostPreview,
+    mode,
+    setMode,
+    searchQuery,
+    setSearchQuery,
+    loadSelfUser,
+    loadPostList,
+    postList,
   } = useHomepageStore();
+  const [modeLoading, setModeLoading] = useState(false);
+
+  // 高级搜索 / 我的喜欢 / 我的书签：直接加载列表，下载配置沿用同一面板
+  const startModeLoad = async () => {
+    setModeLoading(true);
+    try {
+      if (mode === 'likes' || mode === 'bookmarks') {
+        await loadSelfUser();
+      } else if (mode === 'search' && !searchQuery.trim()) {
+        message.warning('请输入搜索语句');
+        return;
+      }
+      await loadPostList();
+    } catch (err: any) {
+      log.error(err);
+      message.error(err?.message || '加载失败');
+    } finally {
+      setModeLoading(false);
+    }
+  };
   const { searchHistory, addSearchHistory, clearSearchHistory } =
     useAppStateStore((s) => ({
       searchHistory: s.searchHistory,
@@ -118,7 +151,57 @@ export const Homepage: React.FC = () => {
       <div>
         <PageHeader />
         <div className="shrink-0">
-          <section aria-label="搜索用户">
+          <Segmented
+            className="mb-3"
+            value={mode}
+            onChange={(v) => setMode(v as typeof mode)}
+            options={[
+              { label: '博主 / 帖子', value: 'user', icon: <UserOutlined /> },
+              { label: '高级搜索', value: 'search', icon: <SearchOutlined /> },
+              { label: '我的喜欢', value: 'likes', icon: <HeartOutlined /> },
+              { label: '我的书签', value: 'bookmarks', icon: <BookOutlined /> },
+            ]}
+          />
+          {mode !== 'user' && (
+            <section aria-label={mode === 'search' ? '高级搜索' : '我的内容'}>
+              <Space.Compact block>
+                {mode === 'search' ? (
+                  <Input
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onPressEnter={startModeLoad}
+                    placeholder="X 搜索语句，如：from:GenshinImpact filter:media since:2024-01-01"
+                  />
+                ) : (
+                  <Input
+                    disabled
+                    value={
+                      mode === 'likes'
+                        ? '登录账号点过喜欢的推文'
+                        : '登录账号的书签'
+                    }
+                  />
+                )}
+                <Button
+                  type="primary"
+                  loading={modeLoading}
+                  onClick={startModeLoad}
+                >
+                  加载
+                </Button>
+              </Space.Compact>
+              <p className="text-xs text-ant-color-text-tertiary mt-1">
+                {mode === 'search'
+                  ? '需要登录账号。日期范围超过一个月时会自动按月拆分搜索，避免 X 搜索丢失结果。'
+                  : '需要登录账号；数量较多时较早的内容可能获取不到。'}
+              </p>
+              <DownloadController />
+            </section>
+          )}
+          <section
+            aria-label="搜索用户"
+            className={mode === 'user' ? '' : 'hidden'}
+          >
             <Space.Compact block>
               <Input
                 type="search"
@@ -266,7 +349,7 @@ export const Homepage: React.FC = () => {
           )}
         </div>
       </div>
-      {userInfo.data && (
+      {(mode === 'user' ? !!userInfo.data : !!postList.list) && (
         <section
           className="relative grow mt-4 pb-4 overflow-hidden h-full min-h-[50vh]"
           aria-label="内容预览"

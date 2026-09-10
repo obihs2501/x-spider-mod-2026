@@ -43,6 +43,8 @@ import { useRouteStore } from '../stores/route';
 import { useHomepageStore } from '../stores/homepage';
 import { ROUTES } from '../constants/routes';
 import { delay } from '../utils';
+import { parseScreenNameList, saveTextFile, toCsv } from '../utils/export';
+import { ExportOutlined } from '@ant-design/icons';
 
 export const BloggerManagement: React.FC = () => {
   const { message, modal } = App.useApp();
@@ -85,7 +87,9 @@ export const BloggerManagement: React.FC = () => {
   const [incrementalStart, setIncrementalStart] = useState<Dayjs>(dayjs());
   const [useCustomStart, setUseCustomStart] = useState(false);
   const [importUsersOpen, setImportUsersOpen] = useState(false);
-  const [importKind, setImportKind] = useState<'list' | 'following'>('list');
+  const [importKind, setImportKind] = useState<'list' | 'following' | 'paste'>(
+    'list',
+  );
   const [importInput, setImportInput] = useState('');
   const [importFetching, setImportFetching] = useState(false);
   const [importUsers, setImportUsers] = useState<TwitterUser[] | null>(null);
@@ -104,9 +108,30 @@ export const BloggerManagement: React.FC = () => {
       let users: TwitterUser[];
       if (importKind === 'list') {
         users = await getListMembers(input);
-      } else {
+      } else if (importKind === 'following') {
         const target = await getUser(input);
         users = await getFollowing(target.id);
+      } else {
+        // 粘贴用户名列表：逐个解析资料（失败的跳过）
+        const names = parseScreenNameList(importInput);
+        if (names.length === 0) {
+          message.warning('未识别到有效的用户名');
+          return;
+        }
+        users = [];
+        const failed: string[] = [];
+        for (const name of names) {
+          try {
+            users.push(await getUser(name));
+            await delay(600 + Math.floor(Math.random() * 600));
+          } catch (err) {
+            log.warn('解析用户失败', name, err);
+            failed.push(name);
+          }
+        }
+        if (failed.length) {
+          message.warning(`以下用户解析失败：${failed.join('、')}`);
+        }
       }
       setImportUsers(users);
       if (users.length === 0) {
@@ -117,6 +142,50 @@ export const BloggerManagement: React.FC = () => {
       message.error(`获取失败：${err?.message || '未知原因'}`);
     } finally {
       setImportFetching(false);
+    }
+  };
+
+  /** 导出博主列表（TXT 每行一个用户名 / CSV 含昵称、分组、统计） */
+  const exportBloggers = async (format: 'txt' | 'csv') => {
+    const source = selected.length
+      ? bloggers.filter((b) => selected.includes(b.screenName))
+      : filtered;
+    if (source.length === 0) {
+      message.warning('没有可导出的博主');
+      return;
+    }
+    const stamp = dayjs().format('YYYYMMDD-HHmmss');
+    try {
+      let saved: string | null;
+      if (format === 'txt') {
+        saved = await saveTextFile(
+          `bloggers-${stamp}.txt`,
+          source.map((b) => b.screenName).join('\r\n'),
+          [{ name: 'TXT', extensions: ['txt'] }],
+        );
+      } else {
+        saved = await saveTextFile(
+          `bloggers-${stamp}.csv`,
+          toCsv(
+            ['用户名', '昵称', '分组', '本地帖子数', '本地媒体数', '上次下载'],
+            source.map((b) => [
+              b.screenName,
+              b.name || '',
+              groups.find((g) => g.id === b.groupId)?.name || '',
+              bloggerStats[b.screenName]?.postCount ?? '',
+              bloggerStats[b.screenName]?.mediaCount ?? '',
+              b.lastDownloadAt
+                ? dayjs(b.lastDownloadAt).format('YYYY-MM-DD HH:mm')
+                : '',
+            ]),
+          ),
+          [{ name: 'CSV', extensions: ['csv'] }],
+        );
+      }
+      if (saved) message.success(`已导出 ${source.length} 位博主到 ${saved}`);
+    } catch (err: any) {
+      log.error(err);
+      message.error(`导出失败：${err?.message || err}`);
     }
   };
 
@@ -518,6 +587,19 @@ export const BloggerManagement: React.FC = () => {
         >
           新建分组
         </Button>
+        <Dropdown
+          menu={{
+            items: [
+              { key: 'txt', label: 'TXT（每行一个用户名，可再导入）' },
+              { key: 'csv', label: 'CSV（含昵称、分组、统计）' },
+            ],
+            onClick: ({ key }) => exportBloggers(key as 'txt' | 'csv'),
+          }}
+        >
+          <Button size="small" icon={<ExportOutlined />}>
+            导出{selected.length > 0 ? `选中（${selected.length}）` : '列表'}
+          </Button>
+        </Dropdown>
         <Checkbox
           checked={allFilteredSelected}
           indeterminate={selected.length > 0 && !allFilteredSelected}
@@ -846,7 +928,13 @@ export const BloggerManagement: React.FC = () => {
       </Modal>
 
       <Modal
-        title={importKind === 'list' ? '导入 X 列表成员' : '导入关注的用户'}
+        title={
+          importKind === 'list'
+            ? '导入 X 列表成员'
+            : importKind === 'following'
+              ? '导入关注的用户'
+              : '粘贴用户名列表导入'
+        }
         open={importUsersOpen}
         onCancel={() => {
           setImportUsersOpen(false);
@@ -869,17 +957,29 @@ export const BloggerManagement: React.FC = () => {
           >
             <Radio value="list">列表 ID</Radio>
             <Radio value="following">账号用户名</Radio>
+            <Radio value="paste">粘贴用户名列表</Radio>
           </Radio.Group>
-          <Input
-            placeholder={
-              importKind === 'list'
-                ? '输入列表 ID（URL 中的数字）'
-                : '输入账号用户名（@xxx）'
-            }
-            value={importInput}
-            onChange={(e) => setImportInput(e.target.value)}
-            onPressEnter={fetchImportUsers}
-          />
+          {importKind === 'paste' ? (
+            <Input.TextArea
+              rows={6}
+              placeholder={
+                '每行一个用户名（支持 @xxx、x.com/xxx 链接，逗号/空格分隔也可）\n可直接粘贴「导出 TXT」的内容'
+              }
+              value={importInput}
+              onChange={(e) => setImportInput(e.target.value)}
+            />
+          ) : (
+            <Input
+              placeholder={
+                importKind === 'list'
+                  ? '输入列表 ID（URL 中的数字）'
+                  : '输入账号用户名（@xxx）'
+              }
+              value={importInput}
+              onChange={(e) => setImportInput(e.target.value)}
+              onPressEnter={fetchImportUsers}
+            />
+          )}
           <Button
             type="primary"
             block
