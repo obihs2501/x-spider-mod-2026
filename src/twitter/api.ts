@@ -214,6 +214,7 @@ export async function getUser(screenName: string): Promise<TwitterUser> {
       variables: JSON.stringify({
         screen_name: screenName,
         withSafetyModeUserFields: true,
+        withGrokTranslatedBio: false,
       }),
     },
     on429: handle429,
@@ -229,21 +230,38 @@ export async function getUser(screenName: string): Promise<TwitterUser> {
     throw new Error(`X API 返回错误：${msg || '未知错误'}`);
   }
 
-  const data = R.path(['data', 'user', 'result', 'legacy'])(resp.body) as any;
+  const data = R.path(['data', 'user', 'result'])(resp.body) as any;
+  const user = parseUserResult(data);
 
-  if (!data) {
+  if (!user) {
     throw new Error('找不到该用户');
   }
 
+  return user;
+}
+
+/**
+ * 解析 user_results.result：兼容旧结构（字段都在 legacy 下）与
+ * 2025 年后的新结构（screen_name/name/created_at 在 core，头像在 avatar.image_url）。
+ */
+function parseUserResult(result: any): TwitterUser | null {
+  if (!result) return null;
+  const legacy = result.legacy || {};
+  const core = result.core || legacy;
+  const screenName = core.screen_name || legacy.screen_name;
+  const id = result.rest_id || legacy.id_str;
+  if (!id || !screenName) return null;
   return {
-    avatar: data?.profile_image_url_https,
-    name: data?.name,
-    screenName: data?.screen_name,
-    id: R.path<string>(['data', 'user', 'result', 'rest_id'])(
-      resp.body,
-    ) as string,
-    mediaCount: data?.media_count,
-    registerTime: dayjs(data.created_at),
+    id,
+    screenName,
+    name: core.name || legacy.name || screenName,
+    avatar:
+      result.avatar?.image_url ||
+      legacy.profile_image_url_https ||
+      core.profile_image_url_https ||
+      '',
+    mediaCount: legacy.media_count,
+    registerTime: dayjs(core.created_at || legacy.created_at),
   };
 }
 
@@ -328,27 +346,36 @@ const mapTwitterPosts = (posts: any[]) => {
         R.path<any>(['legacy', 'entities', 'hashtags']),
         R.ifElse(R.isNotNil, R.map(R.prop('text')), R.always([])),
       )(item),
-      user: {
-        id: item?.core?.user_results?.result?.rest_id,
-        avatar:
-          item?.core?.user_results?.result?.legacy?.profile_image_url_https,
-        mediaCount: item?.core?.user_results?.result?.legacy?.media_count,
-        name: item?.core?.user_results?.result?.legacy?.name,
-        screenName: item?.core?.user_results?.result?.legacy?.screen_name,
-        registerTime: item?.core?.user_results?.result?.legacy?.created_at,
-      },
+      user: (() => {
+        const author = parseUserResult(item?.core?.user_results?.result);
+        return (
+          author || {
+            id: item?.core?.user_results?.result?.rest_id,
+            avatar: '',
+            mediaCount: undefined,
+            name: '',
+            screenName: '',
+            registerTime: dayjs(),
+          }
+        );
+      })(),
     };
   })(posts);
 };
 
-const pathToInstructions = R.path<any>([
-  'data',
-  'user',
-  'result',
-  'timeline_v2',
-  'timeline',
-  'instructions',
-]);
+/** 用户时间线指令路径：新接口在 timeline，旧接口在 timeline_v2，两者都试 */
+const pathToInstructions = (data: any): any =>
+  R.path<any>(['data', 'user', 'result', 'timeline', 'timeline', 'instructions'])(
+    data,
+  ) ||
+  R.path<any>([
+    'data',
+    'user',
+    'result',
+    'timeline_v2',
+    'timeline',
+    'instructions',
+  ])(data);
 
 export async function getUserMedias(
   userId: string,
@@ -771,18 +798,8 @@ function extractTimelineUsers(instructions: any[]): {
   for (const entry of entries) {
     const content = entry?.content;
     if (content?.entryType === 'TimelineTimelineItem') {
-      const result = content?.itemContent?.user_results?.result;
-      const legacy = result?.legacy;
-      if (result?.rest_id && legacy?.screen_name) {
-        users.push({
-          id: result.rest_id,
-          screenName: legacy.screen_name,
-          name: legacy.name,
-          avatar: legacy.profile_image_url_https,
-          mediaCount: legacy.media_count,
-          registerTime: dayjs(legacy.created_at),
-        });
-      }
+      const user = parseUserResult(content?.itemContent?.user_results?.result);
+      if (user) users.push(user);
     } else if (
       content?.entryType === 'TimelineTimelineCursor' &&
       content?.cursorType === 'Bottom'
