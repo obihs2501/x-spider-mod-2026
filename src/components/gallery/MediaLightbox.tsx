@@ -140,7 +140,11 @@ const ToolbarButton: React.FC<{
   onClick: () => void;
   disabled?: boolean;
 }> = ({ title, icon, onClick, disabled }) => (
-  <Tooltip title={title}>
+  <Tooltip
+    title={title}
+    color="#FAF9F5"
+    overlayInnerStyle={{ color: '#3D3929', fontSize: 12 }}
+  >
     <button
       className="w-9 h-9 rounded-lg !bg-transparent border-0 !text-[#C9C6BA] hover:!text-white hover:!bg-white/10 disabled:opacity-30 disabled:hover:!bg-transparent flex items-center justify-center transition-colors text-base cursor-pointer"
       onClick={(e) => {

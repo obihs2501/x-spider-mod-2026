@@ -79,5 +79,5 @@ jobs:
           TAG="v${VERSION}-build.${GITHUB_RUN_NUMBER}"
           gh release create "$TAG" ./src-tauri/target/release/bundle/nsis/* \
             --title "$TAG" \
-            --notes "v1.9.4 修复主页切换到高级搜索 / 我的喜欢 / 我的书签模式后，上一次解析的博主卡片与「下载配置」仍残留显示导致出现两份下载配置的问题。" \
+            --notes "v1.9.5 修复：主页切到高级搜索、喜欢、书签模式后残留上一次的博主卡片与下载配置；画廊预览层工具栏提示气泡改为浅色，黑底上可读。" \
             --latest
