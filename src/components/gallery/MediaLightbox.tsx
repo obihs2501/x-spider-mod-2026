@@ -10,7 +10,6 @@ import {
   ZoomOutOutlined,
 } from '@ant-design/icons';
 import { tauri } from '@tauri-apps/api';
-import { Tooltip } from 'antd';
 import clsx from 'clsx';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -140,22 +139,19 @@ const ToolbarButton: React.FC<{
   onClick: () => void;
   disabled?: boolean;
 }> = ({ title, icon, onClick, disabled }) => (
-  <Tooltip
+  // 黑底遮罩上 antd 气泡不可靠，改用原生 title 由系统绘制提示
+  <button
     title={title}
-    color="#FAF9F5"
-    overlayInnerStyle={{ color: '#3D3929', fontSize: 12 }}
+    aria-label={title}
+    className="w-9 h-9 rounded-lg !bg-transparent border-0 !text-[#C9C6BA] hover:!text-white hover:!bg-white/10 disabled:opacity-30 disabled:hover:!bg-transparent flex items-center justify-center transition-colors text-base cursor-pointer"
+    onClick={(e) => {
+      e.stopPropagation();
+      onClick();
+    }}
+    disabled={disabled}
   >
-    <button
-      className="w-9 h-9 rounded-lg !bg-transparent border-0 !text-[#C9C6BA] hover:!text-white hover:!bg-white/10 disabled:opacity-30 disabled:hover:!bg-transparent flex items-center justify-center transition-colors text-base cursor-pointer"
-      onClick={(e) => {
-        e.stopPropagation();
-        onClick();
-      }}
-      disabled={disabled}
-    >
-      {icon}
-    </button>
-  </Tooltip>
+    {icon}
+  </button>
 );
 
 /** 图片 / 视频统一的全屏预览层，支持键盘左右切换、Esc 关闭、滚轮缩放 */
