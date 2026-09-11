@@ -294,7 +294,7 @@ export const Homepage: React.FC = () => {
               />
             )}
           </section>
-          {postPreview && (
+          {mode === 'user' && postPreview && (
             <PostPreview
               post={postPreview}
               downloading={postDownloading}
@@ -302,7 +302,7 @@ export const Homepage: React.FC = () => {
               onClose={() => setPostPreview(null)}
             />
           )}
-          {(userInfo.data || postPreview) && (
+          {mode === 'user' && (userInfo.data || postPreview) && (
             <>
               {userInfo.data && <DownloadController />}
               {userInfo.data && (

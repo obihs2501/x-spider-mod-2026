@@ -79,5 +79,5 @@ jobs:
           TAG="v${VERSION}-build.${GITHUB_RUN_NUMBER}"
           gh release create "$TAG" ./src-tauri/target/release/bundle/nsis/* \
             --title "$TAG" \
-            --notes "v1.9.3 修复解析博主得到「未知用户」且媒体列表为空：X 新版接口把用户名、昵称、注册时间挪到了 core，头像挪到了 avatar.image_url，媒体时间线从 timeline_v2 改为 timeline。现在解析同时兼容新旧两种结构（主页、列表与关注导入、推文作者均适用）。" \
+            --notes "v1.9.4 修复主页切换到高级搜索 / 我的喜欢 / 我的书签模式后，上一次解析的博主卡片与「下载配置」仍残留显示导致出现两份下载配置的问题。" \
             --latest
